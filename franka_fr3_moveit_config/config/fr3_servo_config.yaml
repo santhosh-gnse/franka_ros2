@@ -4,7 +4,7 @@
 use_gazebo: false # Whether the robot is started in a Gazebo simulation environment
 
 ## Properties of incoming commands
-command_in_type: "unitless" # "unitless"> in the range [-1:1], as if from joystick. "speed_units"> cmds are in m/s and rad/s
+command_in_type: "speed_units" # franka_pusht safety node publishes m/s
 scale: 
   # Scale parameters are only used if command_in_type=="unitless"
   linear:  1.0  # Max linear velocity. Unit is [m/s]. Only used for Cartesian commands.
@@ -16,7 +16,7 @@ scale:
 # override_velocity_scaling_factor = 0.0 # valid range [0.0:1.0]
 
 ## Properties of outgoing commands
-publish_period: 0.03  # 1/Nominal publish rate [seconds], was 0.034
+publish_period: 0.05  # PushT task command period (20 Hz)
 low_latency_mode: true  # Set this to true to publish as soon as an incoming Twist command is received (publish_period is ignored)
 
 # What type of topic does your robot driver expect?
@@ -54,7 +54,7 @@ num_outgoing_halt_msgs_to_publish: 5
 ## Configure handling of singularities and joint limits
 lower_singularity_threshold:  22.0  # Start decelerating when the condition number hits this (close to singularity)
 hard_stop_singularity_threshold: 30.0 # Stop when the condition number hits this
-joint_limit_margin: 0.05 # added as a buffer to joint limits [radians]. If moving quickly, make this larger.
+joint_limit_margin: 0.10 # conservative real-robot margin [radians]
 leaving_singularity_threshold_multiplier: 2.0 # Multiply the hard stop limit by this when leaving singularity (see https://github.com/ros-planning/moveit2/pull/620)
 
 ## Topic names
@@ -66,6 +66,6 @@ command_out_topic: /fr3_arm_controller/joint_trajectory # Publish outgoing comma
 
 ## Collision checking for the entire robot body
 check_collisions: true # Check collisions?
-collision_check_rate: 10.0 # [Hz] Collision-checking can easily bog down a CPU if done too often.
+collision_check_rate: 20.0 # match the PushT task command rate
 self_collision_proximity_threshold: 0.02 # Start decelerating when a self-collision is this far [m]
 scene_collision_proximity_threshold: 0.02 # Start decelerating when a scene collision is this far [m]
