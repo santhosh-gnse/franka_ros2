@@ -1,0 +1,18 @@
+/**:
+  ros__parameters:
+    control_rate_hz: 20.0
+    max_linear_speed: 0.05
+    observation_timeout_s: 0.15
+    action_timeout_s: 0.15
+    pose_timeout_s: 0.15
+    joint_names: [fr3_joint1, fr3_joint2, fr3_joint3, fr3_joint4, fr3_joint5, fr3_joint6, fr3_joint7]
+    home_joint_positions: [0.51199203, 0.1014329, 0.0, -2.356, 0.0, 1.571, 0.785]
+    observation_topic: /pusht/observation
+    observation_valid_topic: /pusht/observation_valid
+    teleop_action_topic: /pusht/teleop_action
+    policy_action_topic: /pusht/policy_action
+    executed_action_topic: /pusht/executed_action
+    deadman_topic: /pusht/deadman
+    servo_command_topic: /servo_node/delta_twist_cmds
+    dataset_root: ~/pusht_data
+

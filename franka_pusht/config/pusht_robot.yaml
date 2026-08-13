@@ -1,0 +1,24 @@
+/**:
+  ros__parameters:
+    block_pose_topic: REPLACE_WITH_OPTITRACK_T_TOPIC
+    ee_pose_topic: REPLACE_WITH_OPTITRACK_EE_TOPIC
+    goal_pose_topic: /unused_when_goal_is_fixed
+    goal_is_fixed: true
+    fixed_goal_position: [0.0, 0.0, 0.0]
+    fixed_goal_quaternion_wxyz: [1.0, 0.0, 0.0, 0.0]
+    joint_state_topic: /joint_states
+    optitrack_world_frame: REPLACE_WITH_OPTITRACK_WORLD_FRAME
+    robot_base_frame: fr3_link0
+    command_source: teleop
+    calibration_configured: false
+    # Rotation used to convert goal-frame policy velocity into fr3_link0.
+    goal_to_robot_quaternion_wxyz: [1.0, 0.0, 0.0, 0.0]
+    block_marker_to_object_translation: [0.0, 0.0, 0.0]
+    block_marker_to_object_quaternion_wxyz: [1.0, 0.0, 0.0, 0.0]
+    ee_marker_to_tcp_translation: [0.0, 0.0, 0.0]
+    ee_marker_to_tcp_quaternion_wxyz: [1.0, 0.0, 0.0, 0.0]
+    workspace_configured: false
+    # Safe TCP bounds expressed in the goal frame.
+    workspace_x: [0.0, 0.0]
+    workspace_y: [0.0, 0.0]
+    workspace_z: [0.0, 0.0]

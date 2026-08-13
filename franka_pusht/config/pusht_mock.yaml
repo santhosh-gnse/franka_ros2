@@ -1,0 +1,23 @@
+/**:
+  ros__parameters:
+    block_pose_topic: /mock_optitrack/t_marker
+    ee_pose_topic: /mock_optitrack/ee_marker
+    goal_pose_topic: /mock_optitrack/goal
+    goal_is_fixed: false
+    joint_state_topic: /joint_states
+    optitrack_world_frame: optitrack_world
+    robot_base_frame: fr3_link0
+    command_source: teleop
+    calibration_configured: true
+    goal_to_robot_quaternion_wxyz: [1.0, 0.0, 0.0, 0.0]
+    block_marker_to_object_translation: [0.0, 0.0, 0.0]
+    block_marker_to_object_quaternion_wxyz: [1.0, 0.0, 0.0, 0.0]
+    ee_marker_to_tcp_translation: [0.0, 0.0, 0.0]
+    ee_marker_to_tcp_quaternion_wxyz: [1.0, 0.0, 0.0, 0.0]
+    workspace_configured: true
+    # TCP bounds expressed in the goal frame (the observation's ee_rel_goal).
+    workspace_x: [-0.30, 0.30]
+    workspace_y: [-0.30, 0.30]
+    workspace_z: [-0.10, 0.10]
+    servo_command_topic: /mock_servo/delta_twist_cmds
+    dataset_root: /tmp/pusht_data
