@@ -8,6 +8,28 @@ calibration checklist.
 The package is fail-closed: `pusht_robot.yaml` ships with tracking/calibration
 placeholders, disabled workspace bounds, and therefore cannot command motion.
 
+## Build
+
+`optitrack_bridge/` (the `mocap4r2` OptiTrack driver stack) lives directly
+under `src/`, alongside this package. It is not itself a ROS package, so
+colcon recurses into it and discovers the packages nested inside
+(`mocap4r2_optitrack_driver`, `mocap4r2_msgs`, `mocap4r2_control`, etc.)
+automatically. No separate build step is needed — a normal workspace build
+from the workspace root builds everything, in dependency order:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+rosdep install --from-paths src --ignore-src --rosdistro jazzy -y
+colcon build --symlink-install
+source install/setup.bash
+```
+
+To rebuild just this package and the OptiTrack driver while iterating:
+
+```bash
+colcon build --symlink-install --packages-up-to franka_pusht mocap4r2_optitrack_driver
+```
+
 ## Interfaces
 
 - OptiTrack `PoseStamped`: T marker and EE marker; the goal may be fixed or tracked.
