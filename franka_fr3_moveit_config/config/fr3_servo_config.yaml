@@ -16,7 +16,7 @@ scale:
 # override_velocity_scaling_factor = 0.0 # valid range [0.0:1.0]
 
 ## Properties of outgoing commands
-publish_period: 0.05  # PushT task command period (20 Hz)
+publish_period: 0.01  # PushT task command period (20 Hz), reset it to 0.05 if it does not work
 low_latency_mode: true  # Set this to true to publish as soon as an incoming Twist command is received (publish_period is ignored)
 
 # What type of topic does your robot driver expect?
