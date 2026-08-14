@@ -14,39 +14,55 @@ repeatable local test configuration.
 
 ## 1. OptiTrack T-marker and EE-marker topics
 
-The observation node expects both tracked rigid bodies as:
+`mocap4r2_optitrack_driver` (in `src/optitrack_bridge`) publishes every tracked
+rigid body together on one topic, `/rigid_bodies`
+(`mocap4r2_msgs/msg/RigidBodies`), not per-marker `PoseStamped`. `franka_pusht`
+ships `optitrack_bridge_node`, which subscribes to `/rigid_bodies` and
+republishes the two markers you name below as independent
+`geometry_msgs/msg/PoseStamped` topics, which `observation_node` consumes.
+It is already wired into `pusht_collect.launch.py` and `pusht_deploy.launch.py`.
 
-```text
-geometry_msgs/msg/PoseStamped
-```
+Steps:
 
-Find candidate topics:
+1. In Motive, name the two tracked rigid bodies clearly, e.g. `t_block` and
+   `ee_marker`.
+2. Launch the driver (separate package, separate lifecycle) and activate it:
 
-```bash
-ros2 topic list -t | grep -Ei 'optitrack|mocap|vrpn|rigid|pose'
-```
+   ```bash
+   ros2 launch mocap4r2_optitrack_driver optitrack2.launch.py
+   ros2 lifecycle set /mocap4r2_optitrack_driver_node activate
+   ```
 
-Inspect each candidate:
+   The launch file only configures the node; it does not auto-activate.
+3. Verify data is flowing:
 
-```bash
-ros2 topic type /candidate/topic
-ros2 topic echo /candidate/topic --once
-ros2 topic hz /candidate/topic
-```
+   ```bash
+   ros2 topic echo /rigid_bodies --once
+   ```
 
-Configure:
+Configure in `pusht_robot.yaml`:
 
 ```yaml
-block_pose_topic: /actual/t_marker/pose
-ee_pose_topic: /actual/ee_marker/pose
-optitrack_world_frame: actual_frame_from_header
+block_rigid_body_name: <name given in Motive for the T-marker>
+ee_rigid_body_name: <name given in Motive for the EE-marker>
+block_pose_topic: /pusht/t_block_pose   # optitrack_bridge_node output, already set
+ee_pose_topic: /pusht/ee_marker_pose    # optitrack_bridge_node output, already set
+optitrack_world_frame: map              # driver hardcodes header.frame_id="map"
 ```
 
-`optitrack_world_frame` must exactly equal `header.frame_id` in both messages.
-Both messages must use the same world frame and contain live timestamps.
+`optitrack_world_frame` must exactly equal `header.frame_id` in both messages;
+since the driver hardcodes `"map"` and the bridge node passes the header
+through unchanged, this is already correct and should not need editing.
 
-If the OptiTrack bridge publishes only TF or another message type, do not enable
-motion. Adapt `observation_node.py` or add an adapter that produces `PoseStamped`.
+Also fill in the driver's own network settings before it will connect at all:
+
+```text
+src/optitrack_bridge/mocap4r2_optitrack_driver/config/mocap4r2_optitrack_driver_params.yaml
+```
+
+Set `server_address` to the Motive PC's IP and `local_address` to this
+machine's IP (adjust `connection_type` to `Unicast` if multicast isn't
+available on your network).
 
 ## 2. T-marker to canonical T-block calibration
 

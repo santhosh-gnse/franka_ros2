@@ -11,6 +11,7 @@ def generate_launch_description():
     robot = os.path.join(share, "config", "pusht_robot.yaml")
     parameters = [common, robot]
     return LaunchDescription([
+        Node(package="franka_pusht", executable="optitrack_bridge_node", parameters=parameters, output="screen"),
         Node(package="franka_pusht", executable="observation_node", parameters=parameters, output="screen"),
         Node(package="franka_pusht", executable="policy_node", parameters=parameters, output="screen"),
         Node(package="franka_pusht", executable="safety_node", parameters=parameters + [{"command_source": "policy"}], output="screen"),

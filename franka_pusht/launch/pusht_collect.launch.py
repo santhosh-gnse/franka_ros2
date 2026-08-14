@@ -10,6 +10,7 @@ def generate_launch_description():
     parameters = [os.path.join(share, "config", "pusht_common.yaml"),
                   os.path.join(share, "config", "pusht_robot.yaml")]
     return LaunchDescription([
+        Node(package="franka_pusht", executable="optitrack_bridge_node", parameters=parameters, output="screen"),
         Node(package="franka_pusht", executable="observation_node", parameters=parameters, output="screen"),
         Node(package="joy", executable="joy_node", output="screen"),
         Node(package="franka_pusht", executable="ps5_teleop_node", output="screen"),

@@ -32,6 +32,7 @@ setup(
             "policy_node = franka_pusht.policy_node:main",
             "mock_optitrack_node = franka_pusht.mock_optitrack_node:main",
             "mock_joint_state_node = franka_pusht.mock_joint_state_node:main",
+            "optitrack_bridge_node = franka_pusht.optitrack_bridge_node:main",
         ],
     },
 )
