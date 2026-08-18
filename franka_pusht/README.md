@@ -54,12 +54,19 @@ ros2 control list_controllers
 
 ### 3. Switch Servo to twist mode
 
-This is **per-launch state** — it does not persist across `moveit.launch.py`
-restarts and must be redone every time:
+`ps5_teleop_node` now does this automatically at startup (see step 4) — it
+retries against `/servo_node/switch_command_type` in a background thread as
+soon as it comes up. You only need to do this by hand if you're testing Servo
+directly without the `franka_pusht` pipeline running, or if the teleop node's
+log shows `"Failed to switch Servo to Cartesian twist command mode"`:
 
 ```bash
 ros2 service call /servo_node/switch_command_type moveit_msgs/srv/ServoCommandType "{command_type: 1}"
 ```
+
+This is **per-launch state** — it does not persist across `moveit.launch.py`
+restarts, which is exactly why it's now automated rather than a manual step to
+remember.
 
 ### 4. The `franka_pusht` pipeline
 
@@ -121,10 +128,8 @@ To discard an in-progress episode without saving it:
 `ros2 service call /pusht/abort_episode std_srvs/srv/Trigger "{}"` (not bound
 to a controller button).
 
-`goal_to_robot_quaternion_wxyz` being unvalidated only affects how intuitive
-the joystick feels, not the correctness of recorded data — as long as you can
-successfully push the block to the goal, the recorded transitions are valid
-regardless of whether the mapping feels natural.
+`goal_to_robot_quaternion_wxyz` is now validated (see Calibration status
+below) — teleop direction should feel consistent and controllable.
 
 ## Troubleshooting
 
@@ -187,8 +192,26 @@ likely order of relevance:
   publisher identity changes out from under Servo's still-running subscription.
   A full `moveit.launch.py` restart alongside `franka_pusht` avoids it; restart
   both together when possible rather than just the `franka_pusht` pipeline.
+- **Teleop/policy produces zero motion, `/pusht/observation_valid` is `false`,
+  but `/rigid_bodies` topology looks fine**: check
+  `ros2 lifecycle get /mocap4r2_optitrack_driver_node` — a fresh
+  `optitrack2.launch.py` relaunch always comes up `inactive` and stays that
+  way until you re-run the `activate` command from step 1. It's easy to
+  restart the OptiTrack driver (e.g. after Motive dropped) and forget this
+  step, since `ros2 node list`/`ros2 topic info` both look completely normal
+  while it's inactive — only `ros2 topic echo <topic> --once` (or checking
+  `observation_valid`) reveals that nothing is actually flowing.
+- **Teleop/policy produces zero motion, `observation_valid` is `true`, deadman
+  and `/pusht/executed_action` both look correct, but
+  `/fr3_arm_controller/joint_trajectory` never produces output even though
+  `/servo_node/delta_twist_cmds` is flowing at 20 Hz**: Servo silently ignores
+  Cartesian twist commands (no error, no warning on `/servo_node/status`)
+  until `switch_command_type` has been called since its last restart — see
+  step 3. `ps5_teleop_node` now does this automatically on startup, but if
+  `servo_node` itself gets restarted independently later (without restarting
+  `franka_pusht`), the mode reverts and needs the manual service call again.
 
-## Calibration status (2026-08-18)
+## Calibration status (2026-08-18, updated)
 
 - **T-block tracking**: live via OptiTrack (`objectPushT` rigid body).
   `block_marker_to_object_translation/quaternion_wxyz` = identity, validated
@@ -205,19 +228,19 @@ likely order of relevance:
 - **Home position**: solved via `/compute_ik` for the final link exactly
   perpendicular to the floor, near table height, with ~60° of joint-limit
   margin on every joint.
-- **NOT yet validated**: `goal_to_robot_quaternion_wxyz` is still the identity
-  placeholder. A candidate was solved via least-squares regression (paired
-  finite-difference `/pusht/observation` EE velocity against concurrent
-  `/pusht/executed_action` over a varied joystick sweep, while the rotation
-  was still identity) — it passed its own internal orthogonality check
-  (rows ~perpendicular, as a real rotation requires) but was tried live and
-  reverted: reported no left/right motion and reversed up/down. Identity
-  itself is *also* known-wrong (the very first direction check showed "up"
-  moving opposite to +fr3_link0-X, not what identity implies) — data
-  collection is proceeding anyway since this only affects teleop
-  intuitiveness, not recorded-data correctness (see Collecting data above).
-  Revisit with a cleaner regression capture (longer sweep, wider direction
-  coverage) when there's appetite to fix the feel of teleop.
+- **`goal_to_robot_quaternion_wxyz`: validated.** Derived from the official
+  `optitrack_robot_calibration` hand-eye calibration tool's
+  `fr3_link0<->optitrack` result (10 waypoints, cleanly converged), composed
+  with `fixed_goal_quaternion_wxyz`. Works out to a ~175.5° rotation, almost
+  pure yaw (roll/pitch are noise-level) — confirmed live via teleop direction
+  test: smooth, proportional, fully controllable motion in all directions.
+  This replaced two earlier known-wrong values: plain identity (the original
+  direction check showed "up" moving opposite to +fr3_link0-X) and a
+  least-squares-regression candidate (~169°, tried live and reverted — no
+  left/right motion, reversed up/down; its rotation was messier/non-axis-
+  aligned, unlike the calibration-derived one). If `optitrack_robot_calibration`
+  is ever rerun (e.g. after the OptiTrack rig or robot mount is disturbed),
+  recompute this the same way rather than re-deriving from teleop regression.
 - **NOT yet done**: real workspace bounds (`workspace_x/y/z`) — currently a
   generous provisional box for testing, not the actual measured-safe
   envelope (move the tool to each true physical edge and read

@@ -15,4 +15,13 @@
     deadman_topic: /pusht/deadman
     servo_command_topic: /servo_node/delta_twist_cmds
     dataset_root: ~/pusht_data
+    # PushT is a fixed-height planar task -- the pusher tip should never drift
+    # in Z. safety_node latches the EE's current height as a reference the
+    # moment actions resume (deadman pressed / policy enabled after being
+    # idle) and applies a proportional correction to hold it there, on top of
+    # whatever X/Y the teleop/policy action commands. This is on by default:
+    # neither source has any legitimate reason to want Z drift in this task.
+    z_lock_enabled: false
+    z_correction_gain: 4.0
+    max_z_correction_speed: 0.03
 

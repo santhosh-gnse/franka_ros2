@@ -11,8 +11,8 @@ class OptitrackBridgeNode(Node):
         super().__init__("optitrack_bridge")
         defaults = {
             "rigid_bodies_topic": "/rigid_bodies",
-            "block_rigid_body_name": "REPLACE_WITH_MOTIVE_T_BLOCK_RIGID_BODY_NAME",
-            "ee_rigid_body_name": "REPLACE_WITH_MOTIVE_EE_MARKER_RIGID_BODY_NAME",
+            "block_rigid_body_name": "objectPushT",
+            "ee_rigid_body_name": "franka-ck-calibr",
             "block_pose_topic": "/pusht/t_block_pose",
             "ee_pose_topic": "/pusht/ee_marker_pose",
             # Marker rigidly fixed to the robot's stand/base (not the moving arm).

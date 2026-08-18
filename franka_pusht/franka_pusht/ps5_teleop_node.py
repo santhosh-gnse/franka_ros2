@@ -18,8 +18,10 @@ try:
         MotionPlanRequest,
         PlanningOptions,
     )
+    from moveit_msgs.srv import ServoCommandType
 except ImportError:  # Allows controller/data-pipeline testing without MoveIt.
     MoveGroup = None
+    ServoCommandType = None
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
@@ -47,18 +49,24 @@ TRIGGER_FLOOR = 0.02
 JOY_TIMEOUT_S = 0.15
 
 PLANNING_GROUP = "fr3_arm"
-# fr3_pusher_tcp = [0.524, 0.292, 0.055] in fr3_link0, tool pointing straight
-# down (perpendicular to the floor). Solved via /compute_ik on 2026-08-18 --
-# near ground-plane height (the T-block itself sits at z=0.09 in this frame),
-# reach extended to keep ~60deg of joint margin.
+# fr3_pusher_tcp = [0.524, 0.291, 0.060] in fr3_link0, tool pointing straight
+# down (perpendicular to the floor). Solved via /compute_ik on 2026-08-19 --
+# 0.5cm higher than the previous home (was z=0.055) for a bit more floor
+# clearance margin, at the request of testing on 2026-08-19. Reach kept
+# ~52deg of joint margin (min at joint4), still far from the 0.10rad Servo
+# joint-limit-avoidance threshold. Note: this is a minor extra safety margin
+# only -- it does not fix the real issue found the same day, where large
+# reaches (e.g. far right) push a joint close enough to its limit that Servo
+# can no longer hold Z exactly, causing real height drift independent of
+# where home is. See pusht_robot.yaml workspace_x/y/z comments.
 HOME_JOINTS = {
-    "fr3_joint1": 0.5434380650323642,
-    "fr3_joint2": 0.5359063623573588,
-    "fr3_joint3": -0.03459531986017035,
-    "fr3_joint4": -2.0247011524507035,
-    "fr3_joint5": 0.03216038336120754,
-    "fr3_joint6": 2.560107391089899,
-    "fr3_joint7": 0.4868121526127719,
+    "fr3_joint1": 0.5519244959335514,
+    "fr3_joint2": 0.5240503941526254,
+    "fr3_joint3": -0.044542738454791224,
+    "fr3_joint4": -2.028815029049846,
+    "fr3_joint5": 0.04008740248416058,
+    "fr3_joint6": 2.552064249559695,
+    "fr3_joint7": 0.4800267408718021,
 }
 JOINT_TOL = 0.01
 VEL_SCALE = 0.2
@@ -70,6 +78,11 @@ PAUSE_SERVO = "/servo_node/pause_servo"
 START_COLLECT_SRV = "/pusht/start_episode"
 STOP_COLLECT_SRV = "/pusht/finish_episode"
 SERVO_SETTLE_S = 0.2
+# Servo ignores Cartesian twist commands (silently -- no error/warning) until
+# switched into this command mode. It resets to some other mode every time
+# servo_node restarts, so this must be re-sent on every teleop-node startup.
+SWITCH_COMMAND_TYPE_SRV = "/servo_node/switch_command_type"
+SERVO_COMMAND_TYPE_TWIST = 1
 
 
 class PushTTeleop(Node):
@@ -93,6 +106,23 @@ class PushTTeleop(Node):
                       if MoveGroup is not None else None)
         if self._move is None:
             self.get_logger().warning("moveit_msgs unavailable: Home button is disabled")
+        self._switch_command_type = (
+            self.create_client(ServoCommandType, SWITCH_COMMAND_TYPE_SRV, callback_group=self._cbg)
+            if ServoCommandType is not None else None)
+        if self._switch_command_type is not None:
+            threading.Thread(target=self._enable_cartesian_servo, daemon=True).start()
+        else:
+            self.get_logger().warning("moveit_msgs unavailable: cannot auto-enable Cartesian Servo")
+
+    def _enable_cartesian_servo(self):
+        result = self._call_sync(self._switch_command_type,
+                                 ServoCommandType.Request(command_type=SERVO_COMMAND_TYPE_TWIST))
+        if result and result.success:
+            self.get_logger().info("Servo switched to Cartesian twist command mode")
+        else:
+            self.get_logger().error(
+                "Failed to switch Servo to Cartesian twist command mode -- "
+                "teleop/policy motion will silently do nothing until this succeeds")
 
     def _now(self):
         return self.get_clock().now().nanoseconds * 1e-9

@@ -31,15 +31,18 @@
     # on a bigger increase until goal_to_robot_quaternion_wxyz is validated.
     max_linear_speed: 0.08
     # Rotation used to convert goal-frame policy velocity into fr3_link0.
-    # STILL UNVALIDATED. A regression-solved candidate (~169deg rotation,
-    # 2026-08-18) was tried live and reverted: reported no left/right motion
-    # and reversed up/down. That candidate passed its own orthogonality
-    # self-check, so the regression math wasn't obviously broken -- but
-    # identity below is *also* known-wrong (the original direction test,
-    # before any rotation was applied, already showed "up" moving opposite
-    # to +fr3_link0-X, not the identity-implied same direction). Neither
-    # value is confirmed correct; this still needs a real solve.
-    goal_to_robot_quaternion_wxyz: [1.0, 0.0, 0.0, 0.0]
+    # VALIDATED LIVE 2026-08-18 via teleop direction test: smooth, proportional,
+    # fully controllable motion in all directions (stick down moves EE away
+    # from the robot's pole-mount stand, left/right consistent). Derived from
+    # the official hand-eye calibration tool's fr3_link0<->optitrack result
+    # (10 waypoints, cleanly converged -- translation/quaternion barely moved
+    # after sample ~5), composed with fixed_goal_quaternion_wxyz above.
+    # ~175.5deg rotation, almost pure yaw (RPY ~= [-1.0, -1.1, 175.5] deg --
+    # roll/pitch are noise-level). This replaced an earlier regression-solved
+    # ~169deg candidate that was tried live and reverted (no left/right
+    # motion, reversed up/down); that candidate's rotation was messier/
+    # non-axis-aligned, unlike this one.
+    goal_to_robot_quaternion_wxyz: [0.039032, 0.008805, -0.009244, 0.999156]
     block_marker_to_object_translation: [0.0, 0.0, 0.0]
     block_marker_to_object_quaternion_wxyz: [1.0, 0.0, 0.0, 0.0]
     # EE pose comes from forward kinematics (robot_base_frame -> tcp_frame via
