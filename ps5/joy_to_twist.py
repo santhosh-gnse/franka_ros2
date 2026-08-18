@@ -10,6 +10,8 @@ from rclpy.executors import MultiThreadedExecutor
 from sensor_msgs.msg import Joy
 from geometry_msgs.msg import TwistStamped
 from std_srvs.srv import Trigger
+from std_srvs.srv import Trigger, SetBool
+from moveit_msgs.srv import ServoCommandType
 
 from moveit_msgs.action import MoveGroup
 from shape_msgs.msg import SolidPrimitive
@@ -40,14 +42,24 @@ MAX_LINEAR = 1.0
 SPEED_SCALE = 0.1
 
 PLANNING_GROUP = "fr3_arm"
+# HOME_JOINTS = {
+#     "fr3_joint1": 0.51199203,
+#     "fr3_joint2": 0.1014329,
+#     "fr3_joint3": 0.0,
+#     "fr3_joint4": -2.356,
+#     "fr3_joint5": 0.0,
+#     "fr3_joint6": 1.571,
+#     "fr3_joint7": 0.785,
+# }
+
 HOME_JOINTS = {
-    "fr3_joint1": 0.51199203,
-    "fr3_joint2": 0.1014329,
-    "fr3_joint3": 0.0,
-    "fr3_joint4": -2.356,
-    "fr3_joint5": 0.0,
-    "fr3_joint6": 1.571,
-    "fr3_joint7": 0.785,
+    "fr3_joint1": 0.23,
+    "fr3_joint2": 0.21,
+    "fr3_joint3": -0.21,
+    "fr3_joint4": -2.67,
+    "fr3_joint5": 0.03,
+    "fr3_joint6": 2.84,
+    "fr3_joint7": -0.04,
 }
 JOINT_TOL = 0.01
 VEL_SCALE = 0.2               # home move velocity scaling (be conservative on hardware)
@@ -314,6 +326,7 @@ class JoyToTwist(Node):
         if ENABLE_BUTTON is not None and (
             ENABLE_BUTTON >= len(joy.buttons) or not joy.buttons[ENABLE_BUTTON]
         ):
+            self._publish_zero()
             return
 
         sx = joy.axes[AXIS_LEFT_Y]

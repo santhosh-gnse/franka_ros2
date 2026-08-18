@@ -1,33 +1,70 @@
 /**:
   ros__parameters:
-    # Output topics of optitrack_bridge_node (it republishes /rigid_bodies as
-    # per-marker PoseStamped). observation_node subscribes to these directly.
+    # Output topic of optitrack_bridge_node (it republishes /rigid_bodies as
+    # per-marker PoseStamped). observation_node subscribes to this directly.
+    # There is no EE marker topic: the real pusher tool carries no OptiTrack
+    # marker, so the EE pose comes from forward kinematics instead (see
+    # ee_from_tf below).
     block_pose_topic: /pusht/t_block_pose
-    ee_pose_topic: /pusht/ee_marker_pose
     goal_pose_topic: /unused_when_goal_is_fixed
     goal_is_fixed: true
-    fixed_goal_position: [2.122078, 0.076128, 1.325715]
-    fixed_goal_quaternion_wxyz: [0.999839, 0.003016, 0.003239, -0.017377]
+    # Goal = objectPushT's raw pose at the new physical goal placement (2026-08-18).
+    fixed_goal_position: [2.043880, 0.092344, 1.316397]
+    fixed_goal_quaternion_wxyz: [0.999793, -0.012341, -0.011156, -0.011748]
     joint_state_topic: /joint_states
     # mocap4r2_optitrack_driver hardcodes header.frame_id="map" on /rigid_bodies,
     # and optitrack_bridge_node passes that header through unchanged.
     optitrack_world_frame: map
     robot_base_frame: fr3_link0
-    # Inputs to optitrack_bridge_node: the mocap4r2 topic and the exact rigid-body
-    # names assigned to the two tracked markers in Motive.
+    # Inputs to optitrack_bridge_node: the mocap4r2 topic, the tracked
+    # rigid-body name for the T-block, and a marker fixed to the robot's
+    # stand/base (tracked live, used to keep the EE's forward-kinematics pose
+    # correctly anchored in the OptiTrack world frame). No EE rigid body is
+    # tracked (the real pusher tool has no marker on it).
     rigid_bodies_topic: /rigid_bodies
     block_rigid_body_name: objectPushT
-    ee_rigid_body_name: franka-ck-calibr
+    pole_base_rigid_body_name: franka_pole_base
     command_source: teleop
-    calibration_configured: false
+    calibration_configured: true
+    # Modest bump from the shared 0.05 default now that dead-man/timeout/
+    # workspace/controller issues are all confirmed working. Still holding off
+    # on a bigger increase until goal_to_robot_quaternion_wxyz is validated.
+    max_linear_speed: 0.08
     # Rotation used to convert goal-frame policy velocity into fr3_link0.
+    # STILL UNVALIDATED. A regression-solved candidate (~169deg rotation,
+    # 2026-08-18) was tried live and reverted: reported no left/right motion
+    # and reversed up/down. That candidate passed its own orthogonality
+    # self-check, so the regression math wasn't obviously broken -- but
+    # identity below is *also* known-wrong (the original direction test,
+    # before any rotation was applied, already showed "up" moving opposite
+    # to +fr3_link0-X, not the identity-implied same direction). Neither
+    # value is confirmed correct; this still needs a real solve.
     goal_to_robot_quaternion_wxyz: [1.0, 0.0, 0.0, 0.0]
     block_marker_to_object_translation: [0.0, 0.0, 0.0]
     block_marker_to_object_quaternion_wxyz: [1.0, 0.0, 0.0, 0.0]
-    ee_marker_to_tcp_translation: [0.0, 0.0, 0.0]
-    ee_marker_to_tcp_quaternion_wxyz: [1.0, 0.0, 0.0, 0.0]
-    workspace_configured: false
-    # Safe TCP bounds expressed in the goal frame.
-    workspace_x: [0.0, 0.0]
-    workspace_y: [0.0, 0.0]
-    workspace_z: [0.0, 0.0]
+    # EE pose comes from forward kinematics (robot_base_frame -> tcp_frame via
+    # /tf), composed with the live optitrack-world -> robot-base transform
+    # (pole_base_pose_topic composed with the fixed offset below) -- not from
+    # an OptiTrack marker on the tool (see observation_node).
+    #
+    # pole_base_to_robot_base_* is the fixed offset from franka_pole_base's own
+    # Motive-defined frame to the true fr3_link0 origin. Bootstrapped on
+    # 2026-08-17 from a hand-eye calibration (fr3_link0<->fr3_pusher_tcp via
+    # tf2_echo, paired with map<->franka-ck-calibr via /rigid_bodies; residuals
+    # ~0.6-2.4cm / 0.1-0.4deg across 4 held-static poses) combined with one
+    # simultaneous map<->franka_pole_base reading. Only needs redoing if
+    # franka_pole_base's mount relative to fr3_link0 changes -- not if the
+    # whole stand is moved in the room (that's what tracking it live corrects).
+    ee_from_tf: true
+    tcp_frame: fr3_pusher_tcp
+    pole_base_to_robot_base_translation: [-0.03004, 0.01107, -0.05296]
+    pole_base_to_robot_base_quaternion_wxyz: [-0.02892, 0.00431, 0.6888, 0.72436]
+    # Provisional bounds for the goal_to_robot_quaternion_wxyz direction test
+    # only (2026-08-18), centered loosely on the EE position at that time
+    # ([-0.061, 0.247, -0.048]). NOT yet the final calibrated workspace --
+    # NEED_TO_CONFIGURE.md step 6 (move to each true safe edge and read
+    # ee_pos_rel_goal) still needs to be done properly.
+    workspace_configured: true
+    workspace_x: [-0.35, 0.35]
+    workspace_y: [-0.20, 0.60]
+    workspace_z: [-0.20, 0.20]

@@ -26,7 +26,7 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import Joy
 from std_msgs.msg import Bool, Float32MultiArray
-from std_srvs.srv import Trigger
+from std_srvs.srv import SetBool, Trigger
 
 
 JOY_TOPIC = "/joy"
@@ -47,21 +47,26 @@ TRIGGER_FLOOR = 0.02
 JOY_TIMEOUT_S = 0.15
 
 PLANNING_GROUP = "fr3_arm"
+# fr3_pusher_tcp = [0.524, 0.292, 0.055] in fr3_link0, tool pointing straight
+# down (perpendicular to the floor). Solved via /compute_ik on 2026-08-18 --
+# near ground-plane height (the T-block itself sits at z=0.09 in this frame),
+# reach extended to keep ~60deg of joint margin.
 HOME_JOINTS = {
-    "fr3_joint1": 0.51199203,
-    "fr3_joint2": 0.1014329,
-    "fr3_joint3": 0.0,
-    "fr3_joint4": -2.356,
-    "fr3_joint5": 0.0,
-    "fr3_joint6": 1.571,
-    "fr3_joint7": 0.785,
+    "fr3_joint1": 0.5434380650323642,
+    "fr3_joint2": 0.5359063623573588,
+    "fr3_joint3": -0.03459531986017035,
+    "fr3_joint4": -2.0247011524507035,
+    "fr3_joint5": 0.03216038336120754,
+    "fr3_joint6": 2.560107391089899,
+    "fr3_joint7": 0.4868121526127719,
 }
 JOINT_TOL = 0.01
 VEL_SCALE = 0.2
 ACC_SCALE = 0.2
 MOVE_ACTION = "/move_action"
-START_SERVO = "/servo_node/start_servo"
-STOP_SERVO = "/servo_node/stop_servo"
+# This build of moveit_servo has no start_servo/stop_servo Trigger services --
+# only a single pause_servo SetBool (true = pause, false = resume).
+PAUSE_SERVO = "/servo_node/pause_servo"
 START_COLLECT_SRV = "/pusht/start_episode"
 STOP_COLLECT_SRV = "/pusht/finish_episode"
 SERVO_SETTLE_S = 0.2
@@ -81,8 +86,7 @@ class PushTTeleop(Node):
                                  callback_group=self._cbg)
         self.create_timer(1.0 / PUBLISH_RATE, self._on_timer,
                           callback_group=self._cbg)
-        self._servo_start = self.create_client(Trigger, START_SERVO, callback_group=self._cbg)
-        self._servo_stop = self.create_client(Trigger, STOP_SERVO, callback_group=self._cbg)
+        self._servo_pause = self.create_client(SetBool, PAUSE_SERVO, callback_group=self._cbg)
         self._collect_start = self.create_client(Trigger, START_COLLECT_SRV, callback_group=self._cbg)
         self._collect_stop = self.create_client(Trigger, STOP_COLLECT_SRV, callback_group=self._cbg)
         self._move = (ActionClient(self, MoveGroup, MOVE_ACTION, callback_group=self._cbg)
@@ -97,8 +101,8 @@ class PushTTeleop(Node):
         self._joy = msg
         self._joy_time = self._now()
         self._edge(msg, HOME_BUTTON, self._on_home)
-        self._edge(msg, START_COLLECT_BUTTON, lambda: self._call_async(self._collect_start))
-        self._edge(msg, STOP_COLLECT_BUTTON, lambda: self._call_async(self._collect_stop))
+        self._edge(msg, START_COLLECT_BUTTON, self._on_start_collect)
+        self._edge(msg, STOP_COLLECT_BUTTON, self._on_stop_collect)
 
     def _edge(self, msg, index, callback):
         if index >= len(msg.buttons):
@@ -135,14 +139,59 @@ class PushTTeleop(Node):
         self._busy = True
         try:
             self._call_sync(self._collect_stop)
-            self._publish_stop_action()
-            self._call_sync(self._servo_stop)
-            time.sleep(SERVO_SETTLE_S)
-            ok = self._send_home_goal()
+            ok = self._home_and_settle()
             self.get_logger().info("Home reached" if ok else "Home failed")
         finally:
-            self._call_sync(self._servo_start)
-            self._publish_stop_action()
+            self._busy = False
+
+    def _home_and_settle(self):
+        """Pause Servo, drive to HOME_JOINTS, then resume Servo. Returns success."""
+        self._publish_stop_action()
+        paused = self._call_sync(self._servo_pause, SetBool.Request(data=True))
+        if not (paused and paused.success):
+            self.get_logger().error("Failed to pause Servo; not homing (Servo would fight MoveGroup's execution)")
+            return False
+        time.sleep(SERVO_SETTLE_S)
+        ok = self._send_home_goal()
+        resumed = self._call_sync(self._servo_pause, SetBool.Request(data=False))
+        if not (resumed and resumed.success):
+            self.get_logger().error("Failed to resume Servo after homing")
+        self._publish_stop_action()
+        return ok
+
+    def _on_start_collect(self):
+        if self._busy:
+            return
+        threading.Thread(target=self._start_collect_sequence, daemon=True).start()
+
+    def _start_collect_sequence(self):
+        # Home before recording so every episode starts from the same fixed
+        # pose (mirrors the sim env's reset()) and the transit motion itself
+        # is never part of the recorded trajectory.
+        self._busy = True
+        try:
+            ok = self._home_and_settle()
+            self.get_logger().info("Home reached before episode" if ok else
+                                   "Home failed before episode; not starting")
+            if ok:
+                self._call_sync(self._collect_start)
+        finally:
+            self._busy = False
+
+    def _on_stop_collect(self):
+        if self._busy:
+            return
+        threading.Thread(target=self._stop_collect_sequence, daemon=True).start()
+
+    def _stop_collect_sequence(self):
+        # Finish the episode first, then home -- the return-to-home motion
+        # itself must not be recorded as part of the episode either.
+        self._call_sync(self._collect_stop)
+        self._busy = True
+        try:
+            ok = self._home_and_settle()
+            self.get_logger().info("Home reached after episode" if ok else "Home failed after episode")
+        finally:
             self._busy = False
 
     def _publish_stop_action(self):
@@ -195,10 +244,10 @@ class PushTTeleop(Node):
             time.sleep(0.01)
         return True
 
-    def _call_sync(self, client):
+    def _call_sync(self, client, request=None):
         if not client.wait_for_service(timeout_sec=2.0):
             return None
-        future = client.call_async(Trigger.Request())
+        future = client.call_async(request if request is not None else Trigger.Request())
         return future.result() if self._await(future, 5.0) else None
 
     def _call_async(self, client):

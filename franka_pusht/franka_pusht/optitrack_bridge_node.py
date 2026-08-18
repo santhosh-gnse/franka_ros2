@@ -15,6 +15,12 @@ class OptitrackBridgeNode(Node):
             "ee_rigid_body_name": "REPLACE_WITH_MOTIVE_EE_MARKER_RIGID_BODY_NAME",
             "block_pose_topic": "/pusht/t_block_pose",
             "ee_pose_topic": "/pusht/ee_marker_pose",
+            # Marker rigidly fixed to the robot's stand/base (not the moving arm).
+            # Tracked live so the optitrack-world -> robot-base transform
+            # self-corrects if the stand is ever bumped or repositioned, instead
+            # of relying on a one-off static calibration value.
+            "pole_base_rigid_body_name": "REPLACE_WITH_MOTIVE_POLE_BASE_RIGID_BODY_NAME",
+            "pole_base_pose_topic": "/pusht/pole_base_pose",
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
@@ -23,6 +29,8 @@ class OptitrackBridgeNode(Node):
                 PoseStamped, self.get_parameter("block_pose_topic").value, 10),
             self.get_parameter("ee_rigid_body_name").value: self.create_publisher(
                 PoseStamped, self.get_parameter("ee_pose_topic").value, 10),
+            self.get_parameter("pole_base_rigid_body_name").value: self.create_publisher(
+                PoseStamped, self.get_parameter("pole_base_pose_topic").value, 10),
         }
         self.seen = set()
         self.create_subscription(RigidBodies, self.get_parameter("rigid_bodies_topic").value,

@@ -61,8 +61,13 @@ class SafetyNode(Node):
         if safe:
             ee = self.observation[7:10]
             bounds = [self.get_parameter(n).value for n in ("workspace_x", "workspace_y", "workspace_z")]
-            safe &= all(b[0] <= value <= b[1] for value, b in zip(ee, bounds))
-            # Prevent motion farther out when already on an XY boundary.
+            # Per-axis clamp only: block driving further past a bound, but
+            # always allow motion back toward the safe region. This must NOT
+            # be an all-or-nothing "safe" gate -- Z isn't commanded by this
+            # 2-D action at all (only X/Y are), so an all-or-nothing gate on
+            # all three axes would deadlock X/Y teleop permanently the moment
+            # Z alone drifted outside its bound (e.g. from goal_to_robot
+            # rotation coupling), with no action able to ever recover it.
             if ee[0] <= bounds[0][0] and action[0] < 0 or ee[0] >= bounds[0][1] and action[0] > 0: action[0] = 0.0
             if ee[1] <= bounds[1][0] and action[1] < 0 or ee[1] >= bounds[1][1] and action[1] > 0: action[1] = 0.0
         if not safe: action = np.zeros(2)

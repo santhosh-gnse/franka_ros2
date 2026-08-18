@@ -2,6 +2,7 @@
   ros__parameters:
     block_pose_topic: /mock_optitrack/t_marker
     ee_pose_topic: /mock_optitrack/ee_marker
+    ee_from_tf: false  # no /tf in the mock harness; use the mock OptiTrack EE marker instead
     goal_pose_topic: /mock_optitrack/goal
     goal_is_fixed: false
     joint_state_topic: /joint_states
