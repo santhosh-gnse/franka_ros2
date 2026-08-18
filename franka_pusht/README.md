@@ -111,7 +111,11 @@ ros2 topic echo /pusht/observation_valid   # should be `true`
 Episodes land in `~/pusht_data/session_<timestamp>/episode_0000.npz`,
 `episode_0001.npz`, etc., each with `states`, `actions`, `next_states`,
 `absorbing`, `rewards` (zero-filled — unused by IRL training, since the
-reward is learned, not supplied by the expert).
+reward is learned, not supplied by the expert). Note: `data_collection_node`
+creates a new `session_<timestamp>/` directory every time it starts, whether
+or not any episodes get recorded in it — a pile of near-empty session
+folders (just a `metadata.json`, no `episode_*.npz`) is expected from
+restarts, not a bug.
 
 To discard an in-progress episode without saving it:
 `ros2 service call /pusht/abort_episode std_srvs/srv/Trigger "{}"` (not bound
@@ -169,6 +173,12 @@ likely order of relevance:
   (`franka_description/robots/fr3/joint_limits.yaml`), not just planning
   success. `/compute_ik` (plan-only, no motion) is a safe way to explore
   candidate poses/seeds before committing to one.
+- **`optitrack_bridge` repeatedly logs `"Never seen rigid bodies named:
+  ['REPLACE_WITH_MOTIVE_EE_MARKER_RIGID_BODY_NAME']"`**: expected and
+  harmless. `ee_rigid_body_name` is unset in `pusht_robot.yaml` since EE
+  tracking no longer uses a marker (see Calibration status below) — the node
+  still declares a default placeholder for that parameter and warns that it's
+  never seen, but nothing depends on it.
 - **Restarting only `franka_pusht` (killing/relaunching `pusht_collect.launch.py`)
   while `moveit.launch.py`/`servo_node` keep running** appears to sometimes leave
   Servo's subscription to `/servo_node/delta_twist_cmds` stuck (input flows at
