@@ -131,12 +131,16 @@ class PushTTeleop(Node):
                       if MoveGroup is not None else None)
         if self._move is None:
             self.get_logger().warning("moveit_msgs unavailable: Home button is disabled")
+        # servo_ik_node puts Servo in JOINT_JOG mode when it is running; the
+        # two must not fight over the mode, so this is opt-out.
+        self.declare_parameter("set_servo_command_type", True)
         self._switch_command_type = (
             self.create_client(ServoCommandType, SWITCH_COMMAND_TYPE_SRV, callback_group=self._cbg)
-            if ServoCommandType is not None else None)
+            if ServoCommandType is not None
+            and self.get_parameter("set_servo_command_type").value else None)
         if self._switch_command_type is not None:
             threading.Thread(target=self._enable_cartesian_servo, daemon=True).start()
-        else:
+        elif ServoCommandType is None:
             self.get_logger().warning("moveit_msgs unavailable: cannot auto-enable Cartesian Servo")
 
     def _enable_cartesian_servo(self):

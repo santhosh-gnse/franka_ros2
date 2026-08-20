@@ -29,6 +29,7 @@ setup(
             "teleop_node = franka_pusht.teleop_node:main",
             "ps5_teleop_node = franka_pusht.ps5_teleop_node:main",
             "safety_node = franka_pusht.safety_node:main",
+            "servo_ik_node = franka_pusht.servo_ik_node:main",
             "data_collection_node = franka_pusht.data_collection_node:main",
             "policy_node = franka_pusht.policy_node:main",
             "mock_optitrack_node = franka_pusht.mock_optitrack_node:main",

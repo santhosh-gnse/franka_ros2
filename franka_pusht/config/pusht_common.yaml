@@ -13,7 +13,10 @@
     policy_action_topic: /pusht/policy_action
     executed_action_topic: /pusht/executed_action
     deadman_topic: /pusht/deadman
-    servo_command_topic: /servo_node/delta_twist_cmds
+    # safety_node no longer talks to Servo directly: servo_ik_node consumes this
+    # twist, resolves it into joint velocities with the sim's null-space term,
+    # and publishes JointJog to Servo instead.
+    servo_command_topic: /pusht/desired_twist
     dataset_root: ~/pusht_data
     # PushT is a fixed-height planar task, and the 2-D action spans only the
     # horizontal plane -- so height and orientation have to be actively
@@ -43,23 +46,14 @@
     z_hold_target: 0.045
     z_hold_gain: 2.0
     max_z_hold_speed: 0.05
-    # Left OFF, and the quaternion below is a PLACEHOLDER, not this rig's pose:
-    # it is nominal "tool straight down" with zero yaw, which measures 44.0 deg
-    # away from the real pusher orientation (tf2_echo read RPY
-    # -178.4/-1.06/43.9 deg -- the arm carries a ~44 deg tool yaw at home).
-    # Enabling it as-is would command a spurious 44 deg rotation. Capture the
-    # real quaternion at the home pose first:
-    #   ros2 run tf2_ros tf2_echo fr3_link0 fr3_pusher_tcp
-    # and convert its xyzw reading to wxyz order here.
-    #
-    # Deferred because measured orientation was already stable across a full
-    # teleop sweep (RPY held to <0.01 deg), so height is the urgent half, and
-    # angular commands near joint limits deserve their own careful test. Note
-    # a round pusher does not care about yaw, so holding full orientation
-    # (as pusht_mjx does) may fight Servo's redundancy resolution for nothing;
-    # consider holding only the tool axis if this is ever needed.
-    orientation_hold_enabled: false
-    orientation_hold_quaternion_wxyz: [0.0, 1.0, 0.0, 0.0]
+    # REQUIRED with servo_ik_node: under joint-jog control Servo no longer holds
+    # the tool orientation implicitly, so the angular part of the twist is the
+    # only thing keeping the pusher vertical -- exactly as pusht_mjx does, where
+    # the orientation error is fed into the same IK solve every substep.
+    # The quaternion is sim's GOAL_QUAT_EE, which matches this rig's measured
+    # tool-down orientation to 0.50 deg.
+    orientation_hold_enabled: true
+    orientation_hold_quaternion_wxyz: [0.0, 0.7071068, 0.7071068, 0.0]
     orientation_hold_gain: 1.0
     max_angular_speed: 0.5
 

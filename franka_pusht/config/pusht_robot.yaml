@@ -145,5 +145,12 @@
     # ee_pos_rel_goal) still needs to be done properly.
     workspace_configured: true
     workspace_x: [-0.35, 0.35]
-    workspace_y: [-0.20, 0.60]
+    # Lower y bound widened from -0.20 to -0.35 on 2026-08-20: the policy stalled
+    # against it mid-episode (ee_pos_rel_goal[1] hit -0.2008 and the per-axis
+    # clamp zeroed the action). The pusher has to get around the block, which
+    # starts at block_pos_rel_goal ~ [0.13, -0.13], so it needs more room in -y
+    # than the old provisional box allowed. pusht_mjx has no workspace clamp at
+    # all (only a 1 m block-divergence guard), so the policy never learned about
+    # this limit. STILL NOT the measured-safe envelope -- step 6 is owed.
+    workspace_y: [-0.35, 0.60]
     workspace_z: [-0.20, 0.20]

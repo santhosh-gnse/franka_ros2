@@ -15,5 +15,6 @@ def generate_launch_description():
         Node(package="franka_pusht", executable="observation_node", parameters=parameters, output="screen"),
         Node(package="franka_pusht", executable="policy_node", parameters=parameters, output="screen"),
         Node(package="franka_pusht", executable="safety_node", parameters=parameters + [{"command_source": "policy"}], output="screen"),
+        Node(package="franka_pusht", executable="servo_ik_node", parameters=parameters, output="screen"),
     ])
 

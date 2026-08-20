@@ -13,7 +13,8 @@ def generate_launch_description():
         Node(package="franka_pusht", executable="optitrack_bridge_node", parameters=parameters, output="screen"),
         Node(package="franka_pusht", executable="observation_node", parameters=parameters, output="screen"),
         Node(package="joy", executable="joy_node", output="screen"),
-        Node(package="franka_pusht", executable="ps5_teleop_node", output="screen"),
+        Node(package="franka_pusht", executable="ps5_teleop_node", parameters=parameters + [{"set_servo_command_type": False}], output="screen"),
         Node(package="franka_pusht", executable="safety_node", parameters=parameters, output="screen"),
+        Node(package="franka_pusht", executable="servo_ik_node", parameters=parameters, output="screen"),
         Node(package="franka_pusht", executable="data_collection_node", parameters=parameters, output="screen"),
     ])
