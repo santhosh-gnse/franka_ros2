@@ -53,24 +53,45 @@ TRIGGER_FLOOR = 0.02
 JOY_TIMEOUT_S = 0.15
 
 PLANNING_GROUP = "fr3_arm"
-# fr3_pusher_tcp = [0.524, 0.291, 0.060] in fr3_link0, tool pointing straight
-# down (perpendicular to the floor). Solved via /compute_ik on 2026-08-19 --
-# 0.5cm higher than the previous home (was z=0.055) for a bit more floor
-# clearance margin, at the request of testing on 2026-08-19. Reach kept
-# ~52deg of joint margin (min at joint4), still far from the 0.10rad Servo
-# joint-limit-avoidance threshold. Note: this is a minor extra safety margin
-# only -- it does not fix the real issue found the same day, where large
-# reaches (e.g. far right) push a joint close enough to its limit that Servo
-# can no longer hold Z exactly, causing real height drift independent of
-# where home is. See pusht_robot.yaml workspace_x/y/z comments.
+# fr3_pusher_tcp = [0.40, -0.10, 0.045] in fr3_link0, tool exactly vertical
+# (0.00 deg tilt), 23.9 deg of joint-limit margin, 10 mm of sphere clearance
+# above the 0.020 table. Chosen 2026-08-20 to put arm_qpos near the
+# distribution the policy was trained on, at sim's own pushing height.
+#
+# arm_qpos/arm_qvel are 14 of the 24 observation dims and the policy is very
+# sensitive to them -- it effectively memorised sim's joint-space trajectories.
+# Measuring the angle between the policy's action and the direction from the
+# pusher to the block, on the real observation:
+#     previous home ......... 67.3 deg off
+#     sim's QHOME ........... 27.4 deg off   (unsafe, see below)
+#     this pose .............. 3.1 deg off
+# For comparison, physically repositioning the goal and block to sim's exact
+# layout scores 3.7 deg -- so this pose is as good, with nothing moved.
+# Magnitude is a misleading metric here (a large action in the wrong direction
+# is worse than a small correct one); this was selected on direction.
+#
+# Note pusht_mjx's QHOME itself is NOT usable on the real robot, for two
+# independent reasons: its joint 4 sits 5.5 deg from the limit, inside Servo's
+# joint_limit_margin of 0.10 rad (5.7 deg), so Servo would halt with "close to a
+# joint bound"; and its tip is at z=0.03, at or below the real table surface,
+# because sim's ground plane is at z=0 while this table sits 0.020 above the
+# robot base (measured). QHOME is only a null-space attractor in sim anyway -- the arm
+# never actually rests there, it balances against the Z_HOLD servo.
+#
+# Joint 7 matters far more than its physical effect suggests: it only spins the
+# round, coaxial pusher about its own axis (/compute_fk gives an identical tip
+# position for wildly different values), yet on a real observation swapping only
+# joint 7 to sim's value moved the action from 0.153 to 0.675. It stays put
+# during an episode because commanding zero angular velocity makes Servo hold
+# orientation, which pins it.
 HOME_JOINTS = {
-    "fr3_joint1": 0.5519244959335514,
-    "fr3_joint2": 0.5240503941526254,
-    "fr3_joint3": -0.044542738454791224,
-    "fr3_joint4": -2.028815029049846,
-    "fr3_joint5": 0.04008740248416058,
-    "fr3_joint6": 2.552064249559695,
-    "fr3_joint7": 0.4800267408718021,
+    "fr3_joint1": 0.342282,
+    "fr3_joint2": 0.240131,
+    "fr3_joint3": -0.502155,
+    "fr3_joint4": -2.659841,
+    "fr3_joint5": 0.407356,
+    "fr3_joint6": 2.848474,
+    "fr3_joint7": -2.110221,
 }
 JOINT_TOL = 0.01
 VEL_SCALE = 0.2
