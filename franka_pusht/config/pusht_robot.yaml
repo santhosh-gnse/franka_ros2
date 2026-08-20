@@ -36,10 +36,13 @@
     pole_base_rigid_body_name: franka_pole_base
     command_source: teleop
     calibration_configured: true
-    # Modest bump from the shared 0.05 default now that dead-man/timeout/
-    # workspace/controller issues are all confirmed working. Still holding off
-    # on a bigger increase until goal_to_robot_quaternion_wxyz is validated.
-    max_linear_speed: 0.08
+    # Metres per second at |action| = 1. Raised to 0.10 on 2026-08-20 once the
+    # frame, height and calibration work was validated. NOTE this is the action
+    # scale the recorded demonstrations are labelled with, so pusht_mjx's
+    # MAX_SPEED must be set to the same value or an action of 1.0 means a
+    # different velocity in sim than on the robot (sim ships 0.35). See
+    # SIM_ALIGNMENT.md.
+    max_linear_speed: 0.10
     # Rotation converting goal-frame velocity into fr3_link0. Derived
     # 2026-08-20 as R_(fr3_link0<-map) * R_goal, where R_(fr3_link0<-map) =
     # R_handeye * Rx(90deg) -- the Rx(90) accounts for mocap4r2 publishing

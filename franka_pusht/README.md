@@ -6,6 +6,11 @@ See `NEED_TO_CONFIGURE.md` for the original calibration checklist. This README
 documents the actual working procedure for running the real robot, established
 and validated through hands-on testing.
 
+See `SIM_ALIGNMENT.md` to configure `pusht_mjx` to match this rig — required if
+demonstrations recorded here are to be valid training data over there. It lists
+every measured rig property, the exact sim edits, and the known remaining
+mismatches.
+
 ## Running the real robot: full startup procedure
 
 Four things need to be running, brought up **in this order**, each in its own
@@ -135,23 +140,25 @@ below) — teleop direction should feel consistent and controllable.
 
 Place the block here at the start of **every** episode, so the real task has a
 fixed reset like the sim's (`pusht_mjx` resets to a fixed block pose too, and
-the policy was trained only from that one start state). Recorded 2026-08-20.
+the policy was trained only from that one start state). Measured from the block's physical placement on 2026-08-20, after all frame and
+origin corrections -- these supersede any earlier figures. Re-record (see the
+echo below) whenever the block's start placement changes.
 
 Canonical block pose (i.e. after `block_marker_to_object_*`), expressed in
 `fr3_link0`, which is also the sim's world frame:
 
 | | value |
 | --- | --- |
-| position x, y | `0.6731`, `-0.1399` m |
-| z (block mid-thickness) | `0.0809` m |
-| yaw | `+88.65°` (tilt off vertical `1.34°`) |
+| position x, y | `0.6729`, `-0.1391` m |
+| z (block mid-thickness) | `0.0463` m |
+| yaw | `+88.28°` = `1.5408` rad (tilt off vertical `1.21°`) |
 
 As the observation reports it — the practical way to check a placement, since
 it needs no transforms:
 
 ```text
-block_pos_rel_goal  = [ 0.0923, -0.1297,  0.0020]     # 15.9 cm from the goal
-block_quat_rel_goal = [ 0.6880, -0.0050,  0.0083, 0.7257]   # 93.1 deg rotated
+block_pos_rel_goal  = [ 0.1230, -0.1309,  0.0012]     # 18.0 cm from the goal
+block_quat_rel_goal = [ 0.6903, -0.0039,  0.0087, 0.7235]   # 92.7 deg rotated
 ```
 
 ```bash
@@ -162,8 +169,8 @@ Raw mocap of the `objectPushT` marker (`/rigid_bodies`, Y-up `map` frame), for
 reference — note this is the *marker* pose, not the canonical block pose:
 
 ```text
-position    = [1.954259, 0.093413, 1.216505]
-quat (wxyz) = [-0.696065, -0.004958, -0.717909, 0.008690]
+position    = [1.954989, 0.092635, 1.217220]
+quat (wxyz) = [-0.698347, -0.003770, -0.715702, 0.008312]
 ```
 
 ### Matching this in simulation
@@ -173,21 +180,23 @@ This placement is already very close to the sim's own default start, so
 
 | | real | `pusht_mjx` default |
 | --- | --- | --- |
-| block position | `(0.673, -0.140)` | `BLOCK_POS = (0.6, -0.1)` |
-| block yaw | `88.65°` | `BLOCK_ANGLE = pi/2` (90°) |
-| goal position | `(0.591, -0.003)` | goal body `pos="0.5 0.0 0.04"` |
-| block → goal distance | 15.9 cm | 14.1 cm |
-| block → goal rotation | 93.1° | 90° |
+| block position | `(0.673, -0.139)` | `BLOCK_POS = (0.6, -0.1)` |
+| block yaw | `88.28°` | `BLOCK_ANGLE = pi/2` (90°) |
+| goal position | `(0.560, 0.001)` | goal body `pos="0.5 0.0 0.04"` |
+| block → goal distance | 18.0 cm | 14.1 cm |
+| block → goal rotation | 92.7° | 90° |
 
 To reproduce the real setup exactly, in `environment.py`:
 
 ```python
-BLOCK_POS = (0.673, -0.140)   # was (0.6, -0.1)
-BLOCK_ANGLE = 1.5472          # rad = 88.65 deg; was pi/2
+BLOCK_POS = (0.673, -0.139)   # was (0.6, -0.1)
+BLOCK_ANGLE = 1.5408          # rad = 88.28 deg; was pi/2
 ```
 
 and move the `goal` body in `scene_mjx_free.xml` / `scene_mjx_joint.xml` to
-`pos="0.591 -0.003 0.04"`. Since block and goal are both offset by roughly
+`pos="0.560 0.001 0.044"` (and raise `ground` to z=0.0125). **`SIM_ALIGNMENT.md`
+is the authoritative list** — it covers `QHOME`, `GOAL_POS_EE` and `MAX_SPEED`
+too, which this summary omits. Since block and goal are both offset by roughly
 +0.08 m in x, the real setup is close to a pure translation of the sim's, and
 the *goal-relative* geometry the policy actually observes differs only slightly.
 Moving the goal matters more than it might look: `arm_qpos`/`arm_qvel` are 14 of
