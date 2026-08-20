@@ -129,6 +129,30 @@ or not any episodes get recorded in it — a pile of near-empty session
 folders (just a `metadata.json`, no `episode_*.npz`) is expected from
 restarts, not a bug.
 
+### Extracting the demonstrations that actually solved the task
+
+Episodes usually run past the point where the block reaches the goal, and that
+tail teaches a policy to keep nudging an already-placed block -- often most of
+the episode (one solved at step 417 of 2330, so 82% was post-success).
+
+```bash
+ros2 run franka_pusht extract_success_trajectories
+```
+
+This truncates each episode at the first step satisfying `pusht_mjx`'s own
+success test (`pos_err + orn_err < 0.05`, with `orn_err` the rotation angle in
+radians), so a trajectory ends exactly where a sim episode would, with
+`absorbing[-1] = 1`. Results go to `~/pusht_data/success_trajectories/` with a
+`metadata.json` recording the rule and source sessions. **Originals are never
+modified**, and the output directory is rebuilt each run so deleting a session
+upstream cannot leave orphans behind.
+
+Pre-2026-08-20 sessions are skipped: their observations carry the vertical axis
+in the wrong slot and a zero block-origin offset, so the criterion compares the
+wrong quantities -- their `task_err` looks plausible but means nothing.
+`--include-pre-fix-data` overrides this, and `--root` / `--out` / `--threshold`
+are available.
+
 To discard an in-progress episode without saving it:
 `ros2 service call /pusht/abort_episode std_srvs/srv/Trigger "{}"` (not bound
 to a controller button).
