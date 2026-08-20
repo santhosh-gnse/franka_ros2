@@ -73,8 +73,9 @@ class ServoIkNode(Node):
             "twist_timeout_s": 0.15,
             # pusht_mjx uses KP_ORI = 10.0 for this term.
             "nullspace_gain": 10.0,
-            "nullspace_target": [0.342282, 0.240131, -0.502155, -2.659841,
-                                 0.407356, 2.848474, -2.110221],
+            # Must track ps5_teleop_node.HOME_JOINTS.
+            "nullspace_target": [0.358647, 0.222581, -0.524795, -2.664501,
+                                 0.378454, 2.837589, -2.088795],
             # Per-joint actuator limits from the sim model (fr3_vel_mjx_free.xml
             # ctrlrange), scaled down for the real robot.
             "joint_velocity_limits": [2.62, 2.62, 2.62, 2.62, 5.26, 4.18, 5.26],

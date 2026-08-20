@@ -49,9 +49,9 @@ The source of truth. Everything in §2 follows from these.
 | Goal, canonical, in `fr3_link0` | `[0.5603, 0.0009, 0.0442]` | mocap + hand-eye; its height agrees with the geometric 0.045 to **0.8 mm** by an independent route |
 | Goal orientation vs robot base | 4.4° yaw, 1.9° tilt | `goal_to_robot_quaternion_wxyz`, validated at −5.6° against measured motion |
 | Block episode start, canonical, in `fr3_link0` | `(0.6729, −0.1391)`, yaw `+88.28°` | see §5 — **re-record if the block is repositioned** |
-| Home tool tip | `[0.40, −0.10, 0.045]`, exactly vertical | `/compute_ik`, 23.9° joint-limit margin |
-| Home joints | `[0.342282, 0.240131, -0.502155, -2.659841, 0.407356, 2.848474, -2.110221]` | same |
-| Pusher height during motion | `0.045` (`z_hold_target`) | held to ±1 mm |
+| Home tool tip | `[0.40, −0.10, 0.050]`, exactly vertical | `/compute_ik`, 23.6° joint-limit margin |
+| Home joints | `[0.358647, 0.222581, -0.524795, -2.664501, 0.378454, 2.837589, -2.088795]` | same |
+| Pusher height during motion | `0.050` (`z_hold_target`) | held to ±1 mm; 5 mm above block mid-height, see §2 |
 | Action scale | `0.10` m/s at \|action\| = 1 | `max_linear_speed` |
 | Control rate | 20 Hz | |
 | Pusher tool | box 0.02 × 0.02 × 0.125 m, 15 mm sphere tip; TCP at the sphere **centre** | `custom_pusher_ee.xacro` |
@@ -78,12 +78,13 @@ Left alone, the sim block settles 5 mm lower than the real one and every
 ### `environment.py`
 
 ```python
-QHOME = np.array([0.342282, 0.240131, -0.502155,
-                  -2.659841, 0.407356, 2.848474, -2.110221])
+QHOME = np.array([0.358647, 0.222581, -0.524795,
+                  -2.664501, 0.378454, 2.837589, -2.088795])
 
 BLOCK_POS   = (0.673, -0.139)        # was (0.6, -0.1)
 BLOCK_ANGLE = 1.5408                 # rad = 88.28 deg; was np.pi / 2
-GOAL_POS_EE = np.array([0.40, -0.10, 0.045])   # was [0.45, 0.1, 0.035]
+GOAL_POS_EE = np.array([0.40, -0.10, 0.050])   # was [0.45, 0.1, 0.035]
+Z_HOLD      = 0.050                  # was 0.045  <-- see note below
 MAX_SPEED   = 0.10                   # was 0.35  <-- see the warning below
 ```
 
@@ -92,11 +93,17 @@ normalised to [-1, 1] and multiplied by this. At the sim default an action of
 1.0 means 0.35 m/s, while the same recorded action on the robot meant 0.10 m/s —
 so demonstrations would be interpreted as 3.5× faster than they were performed.
 
+**`Z_HOLD` was 0.045 and briefly matched sim exactly** — the block's mid-height,
+given a slab at 0.020 and a 50 mm block. It was raised to **0.050** on
+2026-08-20 because the tool touched the slab near singular configurations, where
+Servo's velocity scaling degrades the height hold. The pusher now rides 5 mm
+above block mid-height, still well inside the block's 0.020–0.070 span, with
+15 mm of sphere clearance instead of 10 mm.
+
 ### Already matching — do not change
 
 | | value | |
 | --- | --- | --- |
-| `Z_HOLD` | `0.045` | now equals the real `z_hold_target` |
 | `GOAL_QUAT_EE` | `[0.0, 0.7071, 0.7071, 0.0]` | 0.50° from the measured real tool-down orientation |
 | `CONTROL_FREQ` | `20` | |
 | block geometry | stem ±0.05 x, ±0.025 y; crossbar at x=0.075, ±0.06 y; half-thickness 0.025 | = 150 × 120 × 50 mm, confirmed |

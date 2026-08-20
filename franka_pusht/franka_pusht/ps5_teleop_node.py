@@ -53,9 +53,10 @@ TRIGGER_FLOOR = 0.02
 JOY_TIMEOUT_S = 0.15
 
 PLANNING_GROUP = "fr3_arm"
-# fr3_pusher_tcp = [0.40, -0.10, 0.045] in fr3_link0, tool exactly vertical
-# (0.00 deg tilt), 23.9 deg of joint-limit margin, 10 mm of sphere clearance
-# above the 0.020 table. Chosen 2026-08-20 to put arm_qpos near the
+# fr3_pusher_tcp = [0.40, -0.10, 0.050] in fr3_link0, tool exactly vertical,
+# 23.6 deg of joint-limit margin, 15 mm of sphere clearance above the 0.020
+# table. Raised 5 mm from 0.045 on 2026-08-20 because the tool was touching the
+# slab near singular configurations; keep it equal to z_hold_target. Chosen 2026-08-20 to put arm_qpos near the
 # distribution the policy was trained on, at sim's own pushing height.
 #
 # arm_qpos/arm_qvel are 14 of the 24 observation dims and the policy is very
@@ -64,7 +65,7 @@ PLANNING_GROUP = "fr3_arm"
 # pusher to the block, on the real observation:
 #     previous home ......... 67.3 deg off
 #     sim's QHOME ........... 27.4 deg off   (unsafe, see below)
-#     this pose .............. 3.1 deg off
+#     this pose .............. 4.0 deg off
 # For comparison, physically repositioning the goal and block to sim's exact
 # layout scores 3.7 deg -- so this pose is as good, with nothing moved.
 # Magnitude is a misleading metric here (a large action in the wrong direction
@@ -85,13 +86,13 @@ PLANNING_GROUP = "fr3_arm"
 # during an episode because commanding zero angular velocity makes Servo hold
 # orientation, which pins it.
 HOME_JOINTS = {
-    "fr3_joint1": 0.342282,
-    "fr3_joint2": 0.240131,
-    "fr3_joint3": -0.502155,
-    "fr3_joint4": -2.659841,
-    "fr3_joint5": 0.407356,
-    "fr3_joint6": 2.848474,
-    "fr3_joint7": -2.110221,
+    "fr3_joint1": 0.358647,
+    "fr3_joint2": 0.222581,
+    "fr3_joint3": -0.524795,
+    "fr3_joint4": -2.664501,
+    "fr3_joint5": 0.378454,
+    "fr3_joint6": 2.837589,
+    "fr3_joint7": -2.088795,
 }
 JOINT_TOL = 0.01
 VEL_SCALE = 0.2

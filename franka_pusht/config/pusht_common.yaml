@@ -35,15 +35,17 @@
     # pole_base calibration's error and mocap jitter. Read it directly with
     #   ros2 run tf2_ros tf2_echo fr3_link0 fr3_pusher_tcp
     # Keep it equal to the home pose's TCP height so homing and the hold agree.
-    # 0.045 = the table surface (0.020 in fr3_link0, measured 2026-08-20) plus
-    # half the block's 50 mm thickness, i.e. the pusher rides at the block's
-    # mid-height. This matches pusht_mjx exactly: its ground plane is at z=0
-    # with the block body at z=0.045 and Z_HOLD=0.045, so the real rig's
-    # vertical geometry now lines up with the sim's rather than sitting 15 mm
-    # high as it did at the previous 0.060. Leaves 10 mm of clearance between
-    # the bottom of the 15 mm pusher sphere and the table.
+    # The table surface is at 0.020 in fr3_link0 and the block is 50 mm thick,
+    # so its mid-height is 0.045 -- which is what pusht_mjx uses (Z_HOLD=0.045).
+    # Raised 5 mm above that on 2026-08-20 because the tool was touching the
+    # slab near singular configurations, where Servo's velocity scaling degrades
+    # the height hold. 0.050 leaves 15 mm between the bottom of the 15 mm pusher
+    # sphere and the table (was 10 mm) while still contacting the block well
+    # within its 0.020-0.070 vertical span.
+    #
+    # pusht_mjx's Z_HOLD must be set to 0.050 to match -- see SIM_ALIGNMENT.md.
     z_hold_enabled: true
-    z_hold_target: 0.045
+    z_hold_target: 0.050
     z_hold_gain: 2.0
     max_z_hold_speed: 0.05
     # REQUIRED with servo_ik_node: under joint-jog control Servo no longer holds

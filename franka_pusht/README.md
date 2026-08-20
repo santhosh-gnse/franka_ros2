@@ -311,7 +311,7 @@ values live in `config/pusht_robot.yaml`, each with its derivation in a comment.
 | `block_marker_to_object_translation` | `[0.03189, 0.0, 0.00126]` | sphere-probe touch-off, ±1.21 mm residuals |
 | `fixed_goal_quaternion_wxyz` | `[0.016196, 0.000419, 0.715687, 0.698234]` | `block_quat_rel_goal` is exactly `[1,0,0,0]` with the block at the goal |
 | `goal_to_robot_quaternion_wxyz` | `[0.999127, 0.008619, -0.014088, -0.038362]` | −5.6° mean error, measured non-circularly against `ee_pos_rel_goal` |
-| `z_hold_target` | `0.060` | height held to ±1 mm across a teleop sweep (was drifting 5.7 cm) |
+| `z_hold_target` | `0.050` | height held to ±1 mm; 5 mm above block mid-height for slab clearance near singularities |
 | `pole_base_to_robot_base_*` | see config | EE estimate lands ~5 cm from the goal, physically consistent |
 
 Block geometry, confirmed by hand and matching `pusht_mjx` exactly: **150 mm**
@@ -390,9 +390,12 @@ success threshold.
   self-corrects if the robot's stand is ever bumped/repositioned, unlike a
   hardcoded world-to-base constant.
 - **Fixed goal pose**: set from a real physical T-block placement.
-- **Home position**: solved via `/compute_ik` for the final link exactly
-  perpendicular to the floor, near table height, with ~60° of joint-limit
-  margin on every joint.
+- **Home position**: tool tip `[0.40, -0.10, 0.050]` in `fr3_link0`, exactly
+  vertical, 23.6° of joint-limit margin, 15 mm of pusher-sphere clearance above
+  the 0.020 slab. Solved via `/compute_ik` and chosen to put `arm_qpos` near the
+  distribution the policy was trained on (see `HOME_JOINTS` in
+  `ps5_teleop_node.py`). Keep it equal to `z_hold_target`, and keep
+  `servo_ik_node`'s `nullspace_target` equal to it too.
 - **`goal_to_robot_quaternion_wxyz`: validated independently 2026-08-20.**
   Derived as `R_handeye · Rx(90°) · R_goal` — the `Rx(90°)` being the Y-up→Z-up
   step described above. The result is **≈identity** (4.4° yaw, 1.9° tilt), which
