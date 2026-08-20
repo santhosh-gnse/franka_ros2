@@ -80,11 +80,37 @@
     # only because placing the block at the goal gives a near-identity relative
     # pose for ANY frame convention, so that test proved nothing.
     #
-    # NOTE: the translation is still unmeasured. Motive's marker-frame origin
-    # need not sit at sim's block origin (the centre of the stem bar); a
-    # few-cm offset is plausible and would bias block_pos_rel_goal. Deriving it
-    # needs a physical measurement, not mocap data.
-    block_marker_to_object_translation: [0.0, 0.0, 0.0]
+    # Translation measured 2026-08-20 by sphere-probe touch-off. fr3_pusher_tcp
+    # is the CENTRE of the pusher's 15 mm sphere (custom_pusher_ee.xacro), so at
+    # contact the TCP sits exactly 15 mm along the touched face's outward
+    # normal regardless of approach angle -- the same principle as a CMM touch
+    # probe. Each touch gives one linear equation
+    #     m^T offset = m^T v - (plane + 0.015),   m = R_off n_canonical,
+    #     v = R_marker^T (p_tip_map - p_marker)
+    # Touched stem_end, crossbar_end and one crossbar side face; solved by
+    # least squares (residuals +-1.21 mm, exactly half the +2.4 mm by which this
+    # block is longer than sim's, which is what lstsq should do).
+    #
+    # The marker origin sits ~32 mm toward the crossbar from the stem-bar
+    # centre. Previously this was [0,0,0], which biased block_pos_rel_goal by up
+    # to ~2*32 mm as the block rotated away from the goal orientation -- against
+    # sim's success_threshold of 0.05 on pos_err+orn_err.
+    #
+    # The middle (marker +Y = vertical) component is unconstrained and left at
+    # 0. That is deliberate, not missing data: the bias enters only as
+    # (R_marker - R_marker_goal) * offset, and with the block flat on the table
+    # the block-to-goal rotation is a pure yaw about the vertical, which leaves
+    # a vertical vector unchanged -- so that component cancels exactly. It is
+    # also consistent with the measured block_pos_rel_goal[2] of 1.2 mm.
+    #
+    # The probe measured the overall block length as 152.4 mm from the two
+    # opposite end faces -- a by-product independent of the offset itself.
+    # The physical block was then confirmed by hand to be 150 mm long, 120 mm
+    # across the crossbar and 50 mm in width/thickness, i.e. identical to the
+    # sim geometry, so that 2.4 mm is probe error (1.6%) rather than a real
+    # size difference. It also corroborates that the stem axis is marker -X,
+    # since the length only comes out right under that assumption.
+    block_marker_to_object_translation: [0.03189, 0.0, 0.00126]
     block_marker_to_object_quaternion_wxyz: [0.0, 0.0, 0.707107, 0.707107]
     # EE pose comes from forward kinematics (robot_base_frame -> tcp_frame via
     # /tf), composed with the live optitrack-world -> robot-base transform

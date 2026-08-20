@@ -228,7 +228,29 @@ likely order of relevance:
   `goal_to_robot_quaternion_wxyz` is only correct-by-construction under
   `false` -- re-check direction feel after ever touching this.
 
-## Calibration status (2026-08-18, updated)
+## Calibration status (current as of 2026-08-20)
+
+Every geometric transform below is measured and independently validated. The
+values live in `config/pusht_robot.yaml`, each with its derivation in a comment.
+
+| parameter | value | how it was validated |
+| --- | --- | --- |
+| `block_marker_to_object_quaternion_wxyz` | `[0, 0, 0.707107, 0.707107]` | 152.4 mm probe length measurement only comes out right if the stem axis is marker −X |
+| `block_marker_to_object_translation` | `[0.03189, 0.0, 0.00126]` | sphere-probe touch-off, ±1.21 mm residuals |
+| `fixed_goal_quaternion_wxyz` | `[0.016196, 0.000419, 0.715687, 0.698234]` | `block_quat_rel_goal` is exactly `[1,0,0,0]` with the block at the goal |
+| `goal_to_robot_quaternion_wxyz` | `[0.999127, 0.008619, -0.014088, -0.038362]` | −5.6° mean error, measured non-circularly against `ee_pos_rel_goal` |
+| `z_hold_target` | `0.060` | height held to ±1 mm across a teleop sweep (was drifting 5.7 cm) |
+| `pole_base_to_robot_base_*` | see config | EE estimate lands ~5 cm from the goal, physically consistent |
+
+Block geometry, confirmed by hand and matching `pusht_mjx` exactly: **150 mm**
+overall length, **120 mm** crossbar span, **50 mm** stem width / thickness /
+crossbar depth. The probe independently measured the length as 152.4 mm, so
+probe error is ~1.6%.
+
+Known residual errors: the goal frame's z-axis is 1.89° off true vertical, and
+`goal_to_robot` carries a 4.4° yaw — both consistent with the ~2-3° spread of
+the hand-eye calibration, and both small enough not to matter at the 5 cm
+success threshold.
 
 - **Frame conventions** (fixed 2026-08-20 — read this before touching any
   transform). Three frames are in play and two of them are **Y-up**:
@@ -247,6 +269,29 @@ likely order of relevance:
   Y-up→Z-up would change nothing. What sets the observation's axis layout is
   the **goal frame's own orientation**, which is fixed via
   `block_marker_to_object_*` and `fixed_goal_quaternion_wxyz`.
+- **T-block origin offset**: Motive's `objectPushT` pivot sits **~32 mm toward
+  the crossbar** from the stem-bar centre that `pusht_mjx` uses as the block
+  origin. Measured by sphere-probe touch-off, since `fr3_pusher_tcp` is the
+  centre of the pusher's 15 mm sphere (`custom_pusher_ee.xacro`) — at contact
+  the TCP therefore lies exactly 15 mm along the touched face's outward normal
+  whatever the approach angle, like a CMM touch probe. Each touch gives one
+  linear equation in the marker frame:
+  `m^T offset = m^T v − (plane + 0.015)`, with `m = R_off·n_canonical` and
+  `v = R_markerᵀ(p_tip_map − p_marker)`. Touch `stem_end`, `crossbar_end` and
+  one crossbar side face, then least-squares. Because everything is computed in
+  the marker frame, the block sliding *between* touches is harmless — only
+  motion *during* a sample matters.
+  This was `[0,0,0]` before, biasing `block_pos_rel_goal` by up to ~64 mm as the
+  block rotated away from the goal orientation (the bias enters as
+  `(R_marker − R_marker_goal)·offset`, so it vanishes at the goal orientation
+  and grows to `2·|offset|` at 180°) — against a 5 cm success threshold.
+  The vertical component is deliberately left at 0, not missing: with the block
+  flat on the table the block-to-goal rotation is a pure yaw about the vertical,
+  which leaves a vertical vector unchanged, so it cancels exactly.
+  **Take probe samples only in Execution mode with FCI active.** In Programming
+  mode the controllers go `inactive` and a fallback `joint_state_publisher`
+  serves frozen defaults, so FK silently reports the tip at `z_hold_target`
+  instead of its true position. Check `ros2 control list_controllers` first.
 - **T-block tracking**: live via OptiTrack (`objectPushT` rigid body).
   `block_marker_to_object_quaternion_wxyz` maps Motive's Y-up marker frame onto
   the sim's Z-up canonical frame (see the derivation in `pusht_robot.yaml`).
