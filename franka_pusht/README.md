@@ -230,10 +230,41 @@ likely order of relevance:
 
 ## Calibration status (2026-08-18, updated)
 
+- **Frame conventions** (fixed 2026-08-20 — read this before touching any
+  transform). Three frames are in play and two of them are **Y-up**:
+  - `mocap4r2` publishes `/rigid_bodies` **Y-up** with `frame_id: map`, but its
+    TF frame `optitrack` is **Z-up**; `p_optitrack = Rx(90°) · p_map`. Verified
+    live: `objectPushT` reads `[2.0796, 0.0910, 1.2820]` on `/rigid_bodies` and
+    `[2.080, -1.282, 0.091]` via `tf2_echo optitrack objectPushT`. The
+    `hand_eye_calibration` tool solves against the **TF** frame, so its result
+    must not be applied to `/rigid_bodies` coordinates directly (doing so
+    produces a bogus ~1.8 m error and an apparent 1.3 m height offset).
+  - Motive's `objectPushT` rigid body is itself defined **Y-up**.
+  - `pusht_mjx` is **Z-up**, with the canonical block frame's +X along the stem
+    toward the crossbar.
+  The observation is expressed entirely in the goal frame, so it is *invariant*
+  to any global rotation of the world frame — converting the bridge output
+  Y-up→Z-up would change nothing. What sets the observation's axis layout is
+  the **goal frame's own orientation**, which is fixed via
+  `block_marker_to_object_*` and `fixed_goal_quaternion_wxyz`.
 - **T-block tracking**: live via OptiTrack (`objectPushT` rigid body).
-  `block_marker_to_object_translation/quaternion_wxyz` = identity, validated
-  by placing the block at goal and confirming `/pusht/observation[0:7]`
-  matches within ~1.5 cm / 2°.
+  `block_marker_to_object_quaternion_wxyz` maps Motive's Y-up marker frame onto
+  the sim's Z-up canonical frame (see the derivation in `pusht_robot.yaml`).
+  It was previously identity, which left the **vertical axis at index 1** of
+  `block_pos_rel_goal`/`ee_pos_rel_goal` while `pusht_mjx` and the trained
+  policy read **index 2** as vertical — the position triples were scrambled
+  relative to sim. Identity had looked "validated" only because a block placed
+  at the goal yields a near-identity relative pose under *any* frame
+  convention, so that check proved nothing.
+  Validated after the fix: with the block at a random spot on the table,
+  `block_pos_rel_goal = [-0.031, -0.036, 0.0012]` — the vertical component is
+  1.2 mm and now sits in index 2, and `block_quat_rel_goal` is exactly
+  `[1,0,0,0]` when the block is at the goal.
+- **DATA COLLECTED BEFORE 2026-08-20 IS NOT USABLE** for sim-matched training:
+  its observations carry the scrambled axis layout above, and its actions are
+  sign-flipped in X/Y because `goal_to_robot_quaternion_wxyz` was ~180° wrong.
+  The tool-frame bug means the action mapping was not even constant within an
+  episode (it varied with arm pose), so no fixed rotation can repair it.
 - **EE tracking**: the real pusher tool carries no OptiTrack marker. EE pose
   comes from forward kinematics (`fr3_link0 -> fr3_pusher_tcp` via `/tf`)
   composed with `franka_pole_base`'s live tracked pose and a fixed, calibrated
@@ -245,19 +276,27 @@ likely order of relevance:
 - **Home position**: solved via `/compute_ik` for the final link exactly
   perpendicular to the floor, near table height, with ~60° of joint-limit
   margin on every joint.
-- **`goal_to_robot_quaternion_wxyz`: validated.** Derived from the official
-  `optitrack_robot_calibration` hand-eye calibration tool's
-  `fr3_link0<->optitrack` result (10 waypoints, cleanly converged), composed
-  with `fixed_goal_quaternion_wxyz`. Works out to a ~175.5° rotation, almost
-  pure yaw (roll/pitch are noise-level) — confirmed live via teleop direction
-  test: smooth, proportional, fully controllable motion in all directions.
-  This replaced two earlier known-wrong values: plain identity (the original
-  direction check showed "up" moving opposite to +fr3_link0-X) and a
-  least-squares-regression candidate (~169°, tried live and reverted — no
-  left/right motion, reversed up/down; its rotation was messier/non-axis-
-  aligned, unlike the calibration-derived one). If `optitrack_robot_calibration`
-  is ever rerun (e.g. after the OptiTrack rig or robot mount is disturbed),
-  recompute this the same way rather than re-deriving from teleop regression.
+- **`goal_to_robot_quaternion_wxyz`: validated independently 2026-08-20.**
+  Derived as `R_handeye · Rx(90°) · R_goal` — the `Rx(90°)` being the Y-up→Z-up
+  step described above. The result is **≈identity** (4.4° yaw, 1.9° tilt), which
+  independently reproduces `pusht_mjx`, where the goal body carries
+  `quat="1 0 0 0"` and the goal frame is axis-aligned with the robot base. That
+  agreement is the strongest single check that the whole chain is now
+  sim-consistent.
+  Validated non-circularly by comparing `d(ee_pos_rel_goal)/dt` (taken from the
+  OptiTrack-anchored observation, which never touches this rotation) against the
+  commanded action: **−5.6° mean error**, with vertical leakage of 2.9 mm/s
+  against 61 mm/s horizontal (consistent with the 1.9° tilt).
+  Earlier values were all wrong, and worth knowing about as traps:
+  identity; a least-squares regression candidate (~169°, failed live); and
+  ~175.5° — off by ~180° because it composed the Z-up hand-eye rotation with the
+  Y-up goal quaternion, omitting the `Rx(90°)`.
+  Beware of validating this by driving the robot and comparing FK motion to the
+  commanded action: that is **circular**, because `safety_node` uses this same
+  rotation to build the command, so it only ever confirms that Servo executes
+  base-frame twists faithfully. Always validate against `ee_pos_rel_goal` from
+  the observation instead. Direction "feel" is not evidence either — the old
+  ~175.5° value felt fine for a whole session.
 - **Pusher height hold**: active, validated 2026-08-19 (held to +/-1 mm across
   a teleop sweep). `safety_node` servos the tool to a fixed `z_hold_target` in
   `fr3_link0`, read from forward kinematics via `/tf` rather than from the

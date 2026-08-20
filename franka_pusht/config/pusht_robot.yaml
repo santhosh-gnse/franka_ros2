@@ -8,9 +8,19 @@
     block_pose_topic: /pusht/t_block_pose
     goal_pose_topic: /unused_when_goal_is_fixed
     goal_is_fixed: true
-    # Goal = objectPushT's raw pose at the new physical goal placement (2026-08-18).
+    # Goal = the CANONICAL block frame at the physical goal placement, i.e.
+    # objectPushT's raw marker pose there composed with
+    # block_marker_to_object_* below. Position is the raw marker position
+    # (2026-08-18); the quaternion was recomputed 2026-08-20 when the frame
+    # conventions were fixed -- it is no longer the raw marker quaternion
+    # (which was [0.999793, -0.012341, -0.011156, -0.011748]).
+    #
+    # This must stay equal to q_marker_at_goal * q_block_marker_to_object, or
+    # block_quat_rel_goal stops being identity when the block reaches the goal
+    # and the sim's success test (norm(rotvec(block_quat_rel_goal)) -> 0)
+    # silently never fires.
     fixed_goal_position: [2.043880, 0.092344, 1.316397]
-    fixed_goal_quaternion_wxyz: [0.999793, -0.012341, -0.011156, -0.011748]
+    fixed_goal_quaternion_wxyz: [0.016196, 0.000419, 0.715687, 0.698234]
     joint_state_topic: /joint_states
     # mocap4r2_optitrack_driver hardcodes header.frame_id="map" on /rigid_bodies,
     # and optitrack_bridge_node passes that header through unchanged.
@@ -30,21 +40,52 @@
     # workspace/controller issues are all confirmed working. Still holding off
     # on a bigger increase until goal_to_robot_quaternion_wxyz is validated.
     max_linear_speed: 0.08
-    # Rotation used to convert goal-frame policy velocity into fr3_link0.
-    # VALIDATED LIVE 2026-08-18 via teleop direction test: smooth, proportional,
-    # fully controllable motion in all directions (stick down moves EE away
-    # from the robot's pole-mount stand, left/right consistent). Derived from
-    # the official hand-eye calibration tool's fr3_link0<->optitrack result
-    # (10 waypoints, cleanly converged -- translation/quaternion barely moved
-    # after sample ~5), composed with fixed_goal_quaternion_wxyz above.
-    # ~175.5deg rotation, almost pure yaw (RPY ~= [-1.0, -1.1, 175.5] deg --
-    # roll/pitch are noise-level). This replaced an earlier regression-solved
-    # ~169deg candidate that was tried live and reverted (no left/right
-    # motion, reversed up/down); that candidate's rotation was messier/
-    # non-axis-aligned, unlike this one.
-    goal_to_robot_quaternion_wxyz: [0.039032, 0.008805, -0.009244, 0.999156]
+    # Rotation converting goal-frame velocity into fr3_link0. Derived
+    # 2026-08-20 as R_(fr3_link0<-map) * R_goal, where R_(fr3_link0<-map) =
+    # R_handeye * Rx(90deg) -- the Rx(90) accounts for mocap4r2 publishing
+    # /rigid_bodies Y-UP in frame "map" while its TF frame "optitrack" (what
+    # the hand-eye calibration solved against) is Z-UP. Verified live:
+    # objectPushT maps to [2.080, -1.282, 0.091] in TF vs [2.0796, 0.0910,
+    # 1.2820] on /rigid_bodies.
+    #
+    # The result is ~identity (4.4 deg yaw, 1.9 deg tilt), which independently
+    # reproduces pusht_mjx, where the goal body carries quat="1 0 0 0" and the
+    # goal frame is axis-aligned with the robot base -- a strong check that the
+    # whole chain is now consistent with sim.
+    #
+    # The previous value was ~175.5deg, i.e. wrong by ~180deg: it composed the
+    # Z-up hand-eye rotation with the Y-up goal quaternion, omitting the Rx(90).
+    # It had seemed "validated" by a teleop direction test, but that test was
+    # circular -- it compared FK motion against the commanded action using this
+    # same rotation to build the command, so it could only ever confirm that
+    # Servo executes base-frame twists faithfully, never that this value is
+    # right. Because of the ~180deg error, actions recorded before 2026-08-20
+    # are sign-flipped in X/Y.
+    goal_to_robot_quaternion_wxyz: [0.999127, 0.008619, -0.014088, -0.038362]
+    # Motive's objectPushT rigid body is defined Y-UP (its local +Y is the
+    # block's thickness axis -- verified live: local +Y maps to [0.001, 0.013,
+    # 1.000] in fr3_link0). pusht_mjx's canonical block frame is Z-UP with +X
+    # running along the stem toward the crossbar (scene_mjx_free.xml: stem box
+    # +-0.05 in x, crossbar at x=+0.075, half-thickness 0.025 in z).
+    #
+    # So this offset maps marker -> canonical as: canonical +X = marker -X
+    # (the stem direction, identified physically on 2026-08-20), canonical +Z =
+    # marker +Y, canonical +Y = marker +Z. That is a 180 deg rotation about
+    # (0, 1, 1)/sqrt(2), hence the exact 0.707107 values.
+    #
+    # This was previously identity, which put the VERTICAL axis at index 1 of
+    # block_pos_rel_goal/ee_pos_rel_goal while pusht_mjx (and therefore the
+    # trained policy) reads index 2 as vertical -- the position triples were
+    # genuinely scrambled relative to sim. Identity had appeared "validated"
+    # only because placing the block at the goal gives a near-identity relative
+    # pose for ANY frame convention, so that test proved nothing.
+    #
+    # NOTE: the translation is still unmeasured. Motive's marker-frame origin
+    # need not sit at sim's block origin (the centre of the stem bar); a
+    # few-cm offset is plausible and would bias block_pos_rel_goal. Deriving it
+    # needs a physical measurement, not mocap data.
     block_marker_to_object_translation: [0.0, 0.0, 0.0]
-    block_marker_to_object_quaternion_wxyz: [1.0, 0.0, 0.0, 0.0]
+    block_marker_to_object_quaternion_wxyz: [0.0, 0.0, 0.707107, 0.707107]
     # EE pose comes from forward kinematics (robot_base_frame -> tcp_frame via
     # /tf), composed with the live optitrack-world -> robot-base transform
     # (pole_base_pose_topic composed with the fixed offset below) -- not from
