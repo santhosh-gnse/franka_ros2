@@ -210,6 +210,23 @@ likely order of relevance:
   step 3. `ps5_teleop_node` now does this automatically on startup, but if
   `servo_node` itself gets restarted independently later (without restarting
   `franka_pusht`), the mode reverts and needs the manual service call again.
+- **The tool slowly drifts in height (eventually far enough to hit the table),
+  even though only X/Y is ever commanded**: this was `moveit_servo`'s
+  `apply_twist_commands_about_ee_frame` defaulting to `true`, which applied
+  twists about `fr3_pusher_tcp` instead of `fr3_link0` -- silently
+  contradicting `robot_link_command_frame: fr3_link0` in the same config, and
+  ignoring the `header.frame_id` we set. Because the pusher points at the
+  floor, the tool frame is flipped (its +Z points *down*) and yawed ~44 deg, so
+  a nominally-horizontal command leaked 1-2 mm/s of vertical velocity that
+  accumulated without bound, and any height correction ran inverted (its
+  signature: the correction pegged at one limit, then flipped and pegged at the
+  other). Now set to `false` explicitly in `fr3_servo_config.yaml`; measured
+  height then held to +/-1 mm across a full teleop sweep, versus 5.7 cm of
+  drift before. It is a launch-time parameter, so `moveit.launch.py` must be
+  restarted after changing it.
+  Note this also changes what the horizontal commands mean, so
+  `goal_to_robot_quaternion_wxyz` is only correct-by-construction under
+  `false` -- re-check direction feel after ever touching this.
 
 ## Calibration status (2026-08-18, updated)
 
@@ -241,10 +258,32 @@ likely order of relevance:
   aligned, unlike the calibration-derived one). If `optitrack_robot_calibration`
   is ever rerun (e.g. after the OptiTrack rig or robot mount is disturbed),
   recompute this the same way rather than re-deriving from teleop regression.
+- **Pusher height hold**: active, validated 2026-08-19 (held to +/-1 mm across
+  a teleop sweep). `safety_node` servos the tool to a fixed `z_hold_target` in
+  `fr3_link0`, read from forward kinematics via `/tf` rather than from the
+  observation's `ee_pos_rel_goal` (FK is exact; the observation's EE estimate
+  inherits the OptiTrack `pole_base` calibration error, which a height hold
+  must not chase). This mirrors the `pusht_mjx` sim, whose differential IK
+  re-solves `Z_HOLD` every substep — the policy was trained with height held
+  as a hard constraint, so it never learned to hold it itself. Keep
+  `z_hold_target` equal to the home pose's TCP height.
+- **Orientation hold**: implemented but disabled (`orientation_hold_enabled:
+  false`), and its configured quaternion is a placeholder ~44 deg off this
+  rig's real tool pose — read the real value with `tf2_echo` before enabling.
+  Deferred because measured orientation was already stable to <0.01 deg across
+  a sweep. See the comments in `pusht_common.yaml`.
 - **NOT yet done**: real workspace bounds (`workspace_x/y/z`) — currently a
   generous provisional box for testing, not the actual measured-safe
   envelope (move the tool to each true physical edge and read
-  `ee_pos_rel_goal`, per the original checklist).
+  `ee_pos_rel_goal`, per the original checklist). Note `workspace_z` is not
+  enforced at all today: `safety_node` only clamps X/Y, so the height hold
+  above is what actually keeps the tool off the table.
+- **Known sim/real gaps** (relevant to policy deployment, not teleop):
+  `max_linear_speed` is 0.08 m/s here versus `MAX_SPEED = 0.35` in
+  `pusht_mjx`, so the policy has ~4x less authority per action than it was
+  trained with; and Servo resolves the arm's redundancy differently from the
+  sim's null-space pull toward a fixed `QHOME`, while `arm_qpos`/`arm_qvel`
+  are half of the 24-dim observation.
 
 ## Build
 

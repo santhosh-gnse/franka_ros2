@@ -53,6 +53,31 @@ def relative_pose(p_world_object, q_world_object, p_world_reference, q_world_ref
     return p, q
 
 
+def quaternion_to_rotation_vector(q, eps=1e-8):
+    """Axis * angle (radians) for a scalar-first quaternion."""
+    w, x, y, z = normalize_quaternion(q)
+    w = min(1.0, max(-1.0, w))
+    sin_half = math.sqrt(max(0.0, 1.0 - w * w))
+    if sin_half < eps:
+        return np.zeros(3, dtype=np.float64)
+    return (2.0 * math.acos(w)) * np.array([x, y, z], dtype=np.float64) / sin_half
+
+
+def orientation_error_vector(q_desired, q_current):
+    """Rotation vector taking q_current to q_desired, in the parent frame.
+
+    Right-invariant (spatial) error q_e = q_desired * q_current^-1, so the
+    result is an angular velocity directly commandable in the parent frame.
+    Port of pusht_mjx environment.py's _quat_error_body, which the sim's
+    differential IK uses to hold the pusher's orientation fixed.
+    """
+    error = quaternion_multiply(normalize_quaternion(q_desired),
+                               quaternion_inverse(q_current))
+    if error[0] < 0.0:  # shortest arc
+        error = -error
+    return quaternion_to_rotation_vector(error)
+
+
 def yaw_quaternion(yaw):
     return np.array([math.cos(yaw / 2.0), 0.0, 0.0, math.sin(yaw / 2.0)])
 

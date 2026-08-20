@@ -44,6 +44,16 @@ planning_frame: fr3_link0  # The MoveIt planning frame. Often 'base_link' or 'wo
 ## Other frames
 ee_frame_name: fr3_pusher_tcp  # The name of the end effector link, used to return the EE pose
 robot_link_command_frame:  fr3_link0  # commands must be given in the frame of a robot link. Usually either the base or end effector
+# Interpret incoming TwistStamped commands about robot_link_command_frame
+# (fr3_link0) rather than about ee_frame_name. moveit_servo defaults this to
+# TRUE, which silently contradicted robot_link_command_frame above: twists were
+# applied about fr3_pusher_tcp, whose +Z points DOWNWARD while the pusher points
+# at the floor. That inverted every vertical command (a height-hold correction
+# drove the tool *into* the table instead of away from it) and rotated the
+# horizontal plane by the tool's yaw. Base-frame semantics also match the
+# pusht_mjx sim, whose differential IK builds its twist from MuJoCo's
+# world-frame Jacobian -- so the policy's actions mean the same thing here.
+apply_twist_commands_about_ee_frame: false
 
 ## Stopping behaviour
 incoming_command_timeout:  0.1  # Stop servoing if X seconds elapse without a new command

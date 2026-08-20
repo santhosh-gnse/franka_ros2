@@ -15,13 +15,44 @@
     deadman_topic: /pusht/deadman
     servo_command_topic: /servo_node/delta_twist_cmds
     dataset_root: ~/pusht_data
-    # PushT is a fixed-height planar task -- the pusher tip should never drift
-    # in Z. safety_node latches the EE's current height as a reference the
-    # moment actions resume (deadman pressed / policy enabled after being
-    # idle) and applies a proportional correction to hold it there, on top of
-    # whatever X/Y the teleop/policy action commands. This is on by default:
-    # neither source has any legitimate reason to want Z drift in this task.
-    z_lock_enabled: false
-    z_correction_gain: 4.0
-    max_z_correction_speed: 0.03
+    # PushT is a fixed-height planar task, and the 2-D action spans only the
+    # horizontal plane -- so height and orientation have to be actively
+    # servoed, not merely left uncommanded. The pusht_mjx sim does exactly
+    # this inside its differential IK (Z_HOLD=0.045 world / GOAL_QUAT_EE, both
+    # re-solved every substep), which is why its policy never had to learn to
+    # hold them and why the real robot drifted without an equivalent.
+    #
+    # Requires apply_twist_commands_about_ee_frame:=false in
+    # fr3_servo_config.yaml -- with Servo's default of true, +Z is along the
+    # downward-pointing tool axis and the height correction inverts.
+    #
+    # z_hold_target is an absolute fr3_link0 height (not relative to the goal,
+    # unlike NEED_TO_CONFIGURE.md step 12): forward kinematics gives it
+    # exactly, whereas anything goal-relative inherits the OptiTrack
+    # pole_base calibration's error and mocap jitter. Read it directly with
+    #   ros2 run tf2_ros tf2_echo fr3_link0 fr3_pusher_tcp
+    # Keep it equal to the home pose's TCP height so homing and the hold agree.
+    z_hold_enabled: true
+    z_hold_target: 0.060
+    z_hold_gain: 2.0
+    max_z_hold_speed: 0.05
+    # Left OFF, and the quaternion below is a PLACEHOLDER, not this rig's pose:
+    # it is nominal "tool straight down" with zero yaw, which measures 44.0 deg
+    # away from the real pusher orientation (tf2_echo read RPY
+    # -178.4/-1.06/43.9 deg -- the arm carries a ~44 deg tool yaw at home).
+    # Enabling it as-is would command a spurious 44 deg rotation. Capture the
+    # real quaternion at the home pose first:
+    #   ros2 run tf2_ros tf2_echo fr3_link0 fr3_pusher_tcp
+    # and convert its xyzw reading to wxyz order here.
+    #
+    # Deferred because measured orientation was already stable across a full
+    # teleop sweep (RPY held to <0.01 deg), so height is the urgent half, and
+    # angular commands near joint limits deserve their own careful test. Note
+    # a round pusher does not care about yaw, so holding full orientation
+    # (as pusht_mjx does) may fight Servo's redundancy resolution for nothing;
+    # consider holding only the tool axis if this is ever needed.
+    orientation_hold_enabled: false
+    orientation_hold_quaternion_wxyz: [0.0, 1.0, 0.0, 0.0]
+    orientation_hold_gain: 1.0
+    max_angular_speed: 0.5
 

@@ -2,11 +2,13 @@
 
 import numpy as np
 import rclpy
+import tf2_ros
 from geometry_msgs.msg import TwistStamped
 from rclpy.node import Node
+from rclpy.time import Time
 from std_msgs.msg import Bool, Float32MultiArray
 
-from .math_utils import quaternion_to_matrix
+from .math_utils import orientation_error_vector, quaternion_to_matrix
 
 
 class SafetyNode(Node):
@@ -24,12 +26,23 @@ class SafetyNode(Node):
             "goal_to_robot_quaternion_wxyz": [1.0, 0.0, 0.0, 0.0],
             "workspace_configured": False, "workspace_x": [0.0, 0.0],
             "workspace_y": [0.0, 0.0], "workspace_z": [0.0, 0.0],
-            "z_lock_enabled": True, "z_correction_gain": 4.0, "max_z_correction_speed": 0.03,
+            # Pose hold (see _pose_hold): the 2-D action only spans the
+            # horizontal plane, so height and orientation must be actively
+            # servoed to fixed targets -- the pusht_mjx sim does exactly this
+            # inside its differential IK every substep (Z_HOLD / GOAL_QUAT_EE),
+            # which is why its policy never had to learn to hold them.
+            "z_hold_enabled": True, "z_hold_target": 0.060,
+            "z_hold_gain": 2.0, "max_z_hold_speed": 0.05,
+            "orientation_hold_enabled": False,
+            "orientation_hold_quaternion_wxyz": [0.0, 1.0, 0.0, 0.0],
+            "orientation_hold_gain": 1.0, "max_angular_speed": 0.5,
+            "tcp_frame": "fr3_pusher_tcp",
         }
         for name, value in defaults.items(): self.declare_parameter(name, value)
         self.actions = {}; self.action_times = {}; self.observation = None; self.obs_time = None
         self.obs_valid = False; self.deadman = False
-        self.z_ref = None; self.was_safe = False
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
         for source, topic_parameter in (("teleop", "teleop_action_topic"), ("policy", "policy_action_topic")):
             self.create_subscription(Float32MultiArray, self.get_parameter(topic_parameter).value,
                                      lambda msg, s=source: self._on_action(s, msg), 10)
@@ -43,6 +56,63 @@ class SafetyNode(Node):
         self.create_timer(1.0 / self.get_parameter("control_rate_hz").value, self._tick)
 
     def _now(self): return self.get_clock().now().nanoseconds * 1e-9
+
+    def _tcp_pose(self):
+        """Pusher pose in the robot base frame, from forward kinematics.
+
+        Deliberately read from /tf rather than the observation's ee_pos_rel_goal:
+        FK is exact robot kinematics, whereas the observation's EE estimate is
+        anchored through the OptiTrack pole_base calibration, so its height
+        carries that calibration's error and mocap jitter. A height hold must
+        not chase either.
+        """
+        try:
+            tf = self.tf_buffer.lookup_transform(
+                self.get_parameter("robot_base_frame").value,
+                self.get_parameter("tcp_frame").value, Time())
+        except (tf2_ros.LookupException, tf2_ros.ConnectivityException,
+                tf2_ros.ExtrapolationException):
+            return None
+        t, r = tf.transform.translation, tf.transform.rotation
+        return np.array([t.x, t.y, t.z]), np.array([r.w, r.x, r.y, r.z])
+
+    def _pose_hold(self):
+        """Base-frame [vz, wx, wy, wz] holding the pusher's height/orientation.
+
+        Mirrors pusht_mjx's differential IK, which feeds (Z_HOLD - ee_z) and the
+        orientation error into the same Jacobian solve as the commanded planar
+        velocity. Servo must be configured with
+        apply_twist_commands_about_ee_frame:=false for these to mean base-frame
+        vertical/angular motion (otherwise +Z is along the downward-pointing
+        tool axis and the height correction inverts).
+        """
+        hold_z = self.get_parameter("z_hold_enabled").value
+        hold_orientation = self.get_parameter("orientation_hold_enabled").value
+        if not (hold_z or hold_orientation):
+            return 0.0, np.zeros(3)
+        pose = self._tcp_pose()
+        if pose is None:
+            # Skip the correction rather than zeroing the whole command: a
+            # missing transform must not deadlock teleop (see the workspace
+            # clamp note below for the same reasoning).
+            self.get_logger().warning(
+                f"no {self.get_parameter('tcp_frame').value} transform; pose hold inactive",
+                throttle_duration_sec=5.0)
+            return 0.0, np.zeros(3)
+        position, orientation = pose
+        vz = 0.0
+        if hold_z:
+            max_vz = self.get_parameter("max_z_hold_speed").value
+            error = self.get_parameter("z_hold_target").value - position[2]
+            vz = float(np.clip(self.get_parameter("z_hold_gain").value * error, -max_vz, max_vz))
+        angular = np.zeros(3)
+        if hold_orientation:
+            max_w = self.get_parameter("max_angular_speed").value
+            error = orientation_error_vector(
+                self.get_parameter("orientation_hold_quaternion_wxyz").value, orientation)
+            angular = np.clip(self.get_parameter("orientation_hold_gain").value * error, -max_w, max_w)
+        return vz, angular
+
     def _on_action(self, source, msg):
         self.actions[source] = np.asarray(msg.data, dtype=np.float64); self.action_times[source] = self._now()
     def _on_observation(self, msg):
@@ -61,7 +131,6 @@ class SafetyNode(Node):
         action = np.clip(self.actions[source], -1.0, 1.0) if safe else np.zeros(2)
         safe &= bool(np.all(np.isfinite(action)))
         q_robot_goal = self.get_parameter("goal_to_robot_quaternion_wxyz").value
-        z_correction_robot = 0.0
         if safe:
             ee = self.observation[7:10]
             bounds = [self.get_parameter(n).value for n in ("workspace_x", "workspace_y", "workspace_z")]
@@ -74,38 +143,21 @@ class SafetyNode(Node):
             # rotation coupling), with no action able to ever recover it.
             if ee[0] <= bounds[0][0] and action[0] < 0 or ee[0] >= bounds[0][1] and action[0] > 0: action[0] = 0.0
             if ee[1] <= bounds[1][0] and action[1] < 0 or ee[1] >= bounds[1][1] and action[1] > 0: action[1] = 0.0
-            if self.get_parameter("z_lock_enabled").value:
-                # ee is EE-relative-to-goal expressed in the *goal marker's*
-                # own frame, which has a small (~1-2 deg) real-world tilt --
-                # its "Z" drifts by several mm from horizontal motion alone,
-                # with no real height change. Rotate into fr3_link0 (the same
-                # frame the twist command itself is in) to get the actual
-                # physical height, immune to that tilt, before locking it.
-                ee_robot_rel = quaternion_to_matrix(q_robot_goal) @ ee
-                # Latch the current height the moment actions resume (deadman
-                # pressed / policy enabled after being idle) and hold it from
-                # there -- PushT is a fixed-height planar task, so neither
-                # teleop nor the policy has any legitimate reason to drift in
-                # Z; this only ever fights unintended coupling/drift.
-                if not self.was_safe or self.z_ref is None:
-                    self.z_ref = ee_robot_rel[2]
-                gain = self.get_parameter("z_correction_gain").value
-                max_z_speed = self.get_parameter("max_z_correction_speed").value
-                z_correction_robot = float(np.clip(gain * (self.z_ref - ee_robot_rel[2]), -max_z_speed, max_z_speed))
-                self.get_logger().info(
-                    f"z_lock: ref={self.z_ref:.4f} cur={ee_robot_rel[2]:.4f} "
-                    f"err={self.z_ref - ee_robot_rel[2]:.4f} corr={z_correction_robot:.4f}",
-                    throttle_duration_sec=0.5)
         else:
             action = np.zeros(2)
-            self.z_ref = None
-        self.was_safe = safe
         speed = self.get_parameter("max_linear_speed").value
         velocity_robot = quaternion_to_matrix(q_robot_goal) @ np.array([speed * action[0], speed * action[1], 0.0])
+        # Hold height/orientation whenever the pipeline is live, including while
+        # the action is zero: drift accumulates from gravity, redundancy
+        # resolution and Servo's near-limit velocity scaling, not only from
+        # commanded motion, so the hold must keep working between pushes.
+        vz, angular = self._pose_hold() if safe else (0.0, np.zeros(3))
         twist = TwistStamped(); twist.header.stamp = self.get_clock().now().to_msg()
         twist.header.frame_id = self.get_parameter("robot_base_frame").value
         twist.twist.linear.x = float(velocity_robot[0]); twist.twist.linear.y = float(velocity_robot[1])
-        twist.twist.linear.z = float(velocity_robot[2] + z_correction_robot)
+        twist.twist.linear.z = float(velocity_robot[2] + vz)
+        twist.twist.angular.x = float(angular[0]); twist.twist.angular.y = float(angular[1])
+        twist.twist.angular.z = float(angular[2])
         self.twist_pub.publish(twist)
         self.action_pub.publish(Float32MultiArray(data=action.astype(np.float32).tolist()))
 

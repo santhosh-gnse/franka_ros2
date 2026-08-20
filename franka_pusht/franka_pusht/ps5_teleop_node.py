@@ -43,6 +43,10 @@ START_COLLECT_BUTTON = 0
 STOP_COLLECT_BUTTON = 1
 AXIS_LEFT_X = 0
 AXIS_LEFT_Y = 1
+# Sign of each stick axis in the goal frame. ROS joy reports stick-up and
+# stick-left as +1; flip a sign here if the arm moves opposite to the stick.
+SIGN_X = -1.0   # stick up/down   -> action[0]
+SIGN_Y = -1.0  # stick left/right -> action[1]  (inverted)
 AXIS_R2 = 5
 DEADZONE = 0.05
 TRIGGER_FLOOR = 0.02
@@ -148,8 +152,8 @@ class PushTTeleop(Node):
         enabled = fresh and not self._busy and ENABLE_BUTTON < len(joy.buttons) and bool(joy.buttons[ENABLE_BUTTON])
         action = [0.0, 0.0]
         if enabled and max(AXIS_LEFT_X, AXIS_LEFT_Y, AXIS_R2) < len(joy.axes):
-            sx = float(joy.axes[AXIS_LEFT_Y])
-            sy = float(joy.axes[AXIS_LEFT_X])
+            sx = SIGN_X * float(joy.axes[AXIS_LEFT_Y])
+            sy = SIGN_Y * float(joy.axes[AXIS_LEFT_X])
             norm = math.hypot(sx, sy)
             trigger = max(0.0, min(1.0, (1.0 - joy.axes[AXIS_R2]) / 2.0))
             if norm > DEADZONE and trigger > TRIGGER_FLOOR:
