@@ -85,9 +85,10 @@ Bring-up differs from PushT — the Franka Hand replaces the pusher:
 ros2 launch mocap4r2_optitrack_driver optitrack2.launch.py
 ros2 lifecycle set /mocap4r2_optitrack_driver_node activate
 
-# 2. Robot, with the gripper
+# 2. Robot, with the gripper (BOTH arguments are needed: ee_id defaults to 'none')
 ros2 launch franka_fr3_moveit_config moveit.launch.py \
-  robot_ip:=10.90.90.177 use_fake_hardware:=false load_gripper:=true
+  robot_ip:=10.90.90.177 use_fake_hardware:=false \
+  load_gripper:=true ee_id:=franka_hand
 
 # 3. Pipeline
 ros2 launch franka_bulbscrew bulbscrew_collect.launch.py

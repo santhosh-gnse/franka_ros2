@@ -21,10 +21,14 @@ The Franka Hand replaces the PushT pusher, so the launch differs:
 
 ```bash
 ros2 launch franka_fr3_moveit_config moveit.launch.py \
-  robot_ip:=10.90.90.177 use_fake_hardware:=false load_gripper:=true
+  robot_ip:=10.90.90.177 use_fake_hardware:=false \
+  load_gripper:=true ee_id:=franka_hand
 ```
 
-Note `load_gripper:=true` and no `ee_id:=custom_pusher_ee`.
+`load_gripper` and `ee_id` are **separate** arguments and `ee_id` defaults
+to `none`, so `load_gripper:=true` on its own loads nothing -- the frame
+chain simply stops at `fr3_link8` with no error. Both are required. Valid
+ids: `none`, `franka_hand`, `cobot_pump`, `custom_pusher_ee` (what PushT used).
 
 Check:
 
