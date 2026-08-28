@@ -36,9 +36,16 @@
     # KP_ROT = 3.0.
     orientation_hold_gain: 3.0
     max_angular_speed: 1.5
-    # PLACEHOLDER. Measure the real gripper-down orientation at the home pose:
-    #   ros2 run tf2_ros tf2_echo fr3_link0 fr3_hand_tcp
-    # and convert the xyzw reading to wxyz. On PushT the equivalent placeholder
-    # was 44 deg away from the real tool pose, which would have commanded a
-    # spurious rotation had it been enabled blind.
-    hold_quaternion_wxyz: [0.0, 1.0, 0.0, 0.0]
+    # Measured 2026-08-28 from tf2_echo fr3_link0 fr3_hand_tcp, then forced
+    # exactly vertical the way the sim builds its Q_HOLD: take the tool axis
+    # straight down and keep the frame's yaw. The raw reading was 8.9 deg off
+    # vertical because the arm happened to be at an arbitrary pose, so it could
+    # not be used directly.
+    #
+    # The yaw baked in here does not matter. With the tool axis vertical, wrist
+    # yaw IS rotation about world z, so the right-invariant error
+    # quat_error(hold, current) stays purely in its z component -- verified
+    # numerically out to 359 deg of accumulated screwing, with roll/pitch error
+    # at machine zero. safety_node overwrites that z term with the commanded
+    # yaw rate, so screwing never corrupts the vertical hold.
+    hold_quaternion_wxyz: [0.0, 0.731027, 0.682348, 0.0]

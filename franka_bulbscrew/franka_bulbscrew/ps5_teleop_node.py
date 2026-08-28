@@ -75,20 +75,32 @@ Z_SPEED = 0.6             # fraction of max_linear_speed for the up/down buttons
 JOY_TIMEOUT_S = 0.15
 
 PLANNING_GROUP = "fr3_arm"
-# Placeholder: solve with /compute_ik once the socket and bulb holder are
-# placed, exactly as franka_pusht's HOME_JOINTS was. It must (a) clear the
-# workspace, (b) hold the gripper vertical, (c) keep well clear of Servo's
-# joint_limit_margin (0.10 rad), and (d) put arm_qpos near the distribution the
-# policy is trained on -- on PushT that last point moved the policy's action
-# from 67 deg off-target to 3 deg, so it is not cosmetic.
+# fr3_hand_tcp = [0.671, -0.032, 0.250] in fr3_link0, tool exactly vertical
+# (0.00 deg tilt), minimum joint-limit margin 78.7 deg -- far clear of Servo's
+# joint_limit_margin (0.10 rad = 5.7 deg), inside which it halts on almost any
+# motion. Solved via /compute_ik on 2026-08-28.
+#
+# Deliberately NEUTRAL rather than poised at the bulb: it sits at the midpoint
+# between the bulb start and the socket seat, 25.8 cm from one and 27.3 cm from
+# the other, so every episode begins with the same reach-then-carry structure
+# the sim has. A home already at the grasp would also imply a precision the
+# reset does not have, since the bulb is placed by hand and varies slightly.
+#
+# Note this was NOT chosen to match bulbscrew_mjx's QHOME. This task is being
+# set up real-first, so the sim's QHOME gets set FROM this value instead --
+# see SIM_ALIGNMENT.md. (Selecting for closeness to the sim's shipped posture
+# would have been the wrong metric: its tool sits at [0.30, 0, 0.03], low and
+# close, which suits neither this socket nor this bulb.)
+#
+# Must stay equal to servo_ik_node's nullspace_target.
 HOME_JOINTS = {
-    "fr3_joint1": 0.0,
-    "fr3_joint2": -0.7854,
-    "fr3_joint3": 0.0,
-    "fr3_joint4": -2.3562,
-    "fr3_joint5": 0.0,
-    "fr3_joint6": 1.5708,
-    "fr3_joint7": 0.7854,
+    "fr3_joint1": 0.201812,
+    "fr3_joint2": 0.461781,
+    "fr3_joint3": -0.293619,
+    "fr3_joint4": -1.651913,
+    "fr3_joint5": 0.149214,
+    "fr3_joint6": 2.091641,
+    "fr3_joint7": -0.853753,
 }
 JOINT_TOL = 0.01
 VEL_SCALE = 0.2

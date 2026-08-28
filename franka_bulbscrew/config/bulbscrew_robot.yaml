@@ -33,7 +33,10 @@
     # are measured, and safety_node outputs zero while either is false.
     # Work through NEED_TO_CONFIGURE.md in order.
     # ==========================================================================
-    calibration_configured: false
+    # Steps 2-4 of NEED_TO_CONFIGURE.md are done and independently verified:
+    # base anchor (0.04 mm loop closure), bulb frame (tip holds 18.0 mm through
+    # a 357 deg spin), socket seat (0.52 deg from vertical).
+    calibration_configured: true
     workspace_configured: false
 
     # --- socket (bolted down, measured once) ----------------------------------
@@ -46,8 +49,20 @@
     # Its z must be true vertical, or the vertical component lands in the wrong
     # slot while every number still looks plausible. On PushT that exact mistake
     # went unnoticed for a whole session.
-    fixed_socket_position: [0.0, 0.0, 0.0]
-    fixed_socket_quaternion_wxyz: [1.0, 0.0, 0.0, 0.0]
+    # Measured 2026-08-28 with the bulb screwed fully home: the seat IS the
+    # screw tip in that configuration, so it was back-solved from the calibrated
+    # bulb frame (57 samples, 0.58 mm marker jitter). The seat frame is taken as
+    # the seated bulb's own frame, which puts its z along the socket axis --
+    # measured 0.52 deg from true vertical, so the observation's vertical lands
+    # in index 2 as bulbscrew_mjx expects.
+    #
+    # Seat in fr3_link0: [0.5996, 0.0970, 0.0195] -- 1.5 mm above the 18 mm
+    # plank, 0.607 m reach. Re-measure if the socket is ever moved or unbolted.
+    #
+    # Note any error in bulb_tip_offset cancels here for the seated pose, since
+    # the same offset defines both the tip and this seat.
+    fixed_socket_position: [2.044912, 0.005265, 1.397291]
+    fixed_socket_quaternion_wxyz: [0.707852, -0.705547, -0.026774, -0.020802]
     socket_seat_offset: [0.0, 0.0, 0.018]
 
     # --- bulb (tracked as "bulb-trirl") ---------------------------------------
@@ -60,8 +75,33 @@
     # relative pose is small -- that is true for any frame convention and proves
     # nothing. Calibrate it against known geometry instead (NEED_TO_CONFIGURE.md
     # step 3 describes the sphere-probe method that worked on PushT).
-    bulb_marker_to_object_translation: [0.0, 0.0, 0.0]
-    bulb_marker_to_object_quaternion_wxyz: [1.0, 0.0, 0.0, 0.0]
+    # Calibrated 2026-08-28.
+    #
+    # ORIENTATION. Motive defines this rigid body Y-UP like every other one
+    # here: with the bulb standing upright its local +Y read 0.1-0.26 deg from
+    # vertical, so canonical +Z = marker +Y. The bulb is a body of revolution
+    # (sphere head, capsule neck, capsule screw), so rotation about its own axis
+    # is physically meaningless and the in-plane choice is free -- canonical +X
+    # = marker +X was taken. Unlike the PushT T-block there is no "which way
+    # does the crossbar point" question, and the sim's success test
+    # (d_seat + 0.1*upright_err) is yaw-invariant too.
+    #
+    # TRANSLATION. Solved from 124 samples while the bulb was spun through
+    # 357 deg standing on the plank, using two constraints: the canonical origin
+    # is a fixed physical point on the axis, and its height is known (plank at
+    # 18 mm + the 53 mm tip offset). Residual RMS 1.25 mm. The axial term came
+    # out -56.9 mm against -57.7 mm from an independent single-reading estimate
+    # -- two methods agreeing to 0.8 mm. The perpendicular terms are only ~2 mm,
+    # confirming Motive put the origin essentially on the bulb's axis.
+    #
+    # Verified end to end over all 124 samples: the computed screw tip holds
+    # 18.0 mm with 1.0 mm spread (i.e. resting on the plank) through the full
+    # rotation, uprightness 0.9994. That is the check that would fail if either
+    # the axis or the offset were wrong -- and note it does NOT depend on the
+    # socket, so it cannot be fooled the way "place it at the goal and see if
+    # the relative pose is small" can.
+    bulb_marker_to_object_translation: [0.00223, -0.05689, -0.00088]
+    bulb_marker_to_object_quaternion_wxyz: [0.707107, -0.707107, 0.0, 0.0]
     # Along the canonical bulb body's z axis, from bulbscrew_mjx.
     #
     # The sim's bulb head is a 30 mm-radius sphere = 60 mm diameter, which
@@ -81,15 +121,44 @@
     # the gripper must reach for the neck. The sim's holder is a 24 mm square
     # only 30 mm tall and needs remodelling; see SIM_ALIGNMENT.md.
     bulb_tip_offset: -0.053
-    bulb_neck_offset: -0.006
+    # GRASP POINT along the canonical bulb axis. bulbscrew_mjx calls this the
+    # "neck" and puts it at -0.006, a 24 mm capsule just above the screw base.
+    # On the real rig the bulb is held by its glass BODY instead: the jaws close
+    # at 59.7 mm, i.e. across the 60 mm head at its widest point, which puts the
+    # TCP at the head's centre -- +0.041 in the canonical frame.
+    #
+    # The neck is small and fragile; the head is the practical grip. Since
+    # observation dims 7:10 are the tool relative to THIS point, the value has to
+    # describe where the gripper actually goes, or those dims describe a grasp
+    # that never happens. bulbscrew_mjx's NECK_OFF must be changed to match --
+    # see SIM_ALIGNMENT.md.
+    bulb_neck_offset: 0.041
 
     # --- robot base anchor ----------------------------------------------------
     # Fixed offset from the franka_pole_base marker's Motive frame to fr3_link0.
-    # Tracked live so the transform self-corrects if the stand is bumped.
-    # Reusable from franka_pusht if the stand and marker have not moved --
-    # verify rather than assume.
-    pole_base_to_robot_base_translation: [-0.03004, 0.01107, -0.05296]
-    pole_base_to_robot_base_quaternion_wxyz: [-0.02892, 0.00431, 0.6888, 0.72436]
+    # Tracked live so the transform self-corrects if the whole stand is moved;
+    # only the marker's mounting relative to fr3_link0 is baked in here.
+    #
+    # Derived 2026-08-28 from a fresh hand_eye_calibration (10 samples, settled
+    # to a few mm) composed with a simultaneous franka_pole_base reading:
+    #   fr3_link0 -> optitrack : xyz 2.57022 -1.40307 -0.00480
+    #                            xyzw 0.00145 0.00165 0.99967 0.02555
+    # Note that result is in the driver's Z-UP `optitrack` TF frame while
+    # /rigid_bodies is Y-UP `map`, so an Rx(90 deg) sits between them. Skipping
+    # it silently produces a metre-scale error that looks like a real
+    # miscalibration -- see SIM_ALIGNMENT.md section 0.
+    #
+    # Verified by reconstructing fr3_link0's origin from the live marker plus
+    # this offset and expressing it back in fr3_link0: error 0.02 mm.
+    #
+    # This REPLACES the values inherited from franka_pusht
+    # ([-0.03004, 0.01107, -0.05296] / [-0.02892, 0.00431, 0.6888, 0.72436]),
+    # which were stale by 52.1 mm and 3.98 deg. The marker had shifted on the
+    # stand rather than the stand having been moved -- the two look identical in
+    # mocap, and only a fresh calibration distinguishes them. The old values
+    # reconstructed fr3_link0's origin 62.3 mm away from itself.
+    pole_base_to_robot_base_translation: [-0.074, -0.00924, -0.03365]
+    pole_base_to_robot_base_quaternion_wxyz: [0.01351, -0.01733, -0.70912, -0.70475]
 
     # --- workspace ------------------------------------------------------------
     # End-effector bounds relative to the socket seat, in the seat frame.

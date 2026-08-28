@@ -76,7 +76,8 @@ class ServoIkNode(Node):
             # posture pull fights the vertical carry.
             "nullspace_gain": 0.5,
             # Must track ps5_teleop_node.HOME_JOINTS.
-            "nullspace_target": [0.0, -0.7854, 0.0, -2.3562, 0.0, 1.5708, 0.7854],
+            "nullspace_target": [0.201812, 0.461781, -0.293619,
+                                 -1.651913, 0.149214, 2.091641, -0.853753],
             # Per-joint actuator limits from the sim model (fr3_vel_mjx_free.xml
             # ctrlrange), scaled down for the real robot.
             "joint_velocity_limits": [2.62, 2.62, 2.62, 2.62, 5.26, 4.18, 5.26],
