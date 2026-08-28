@@ -4,7 +4,16 @@
     bulb_pose_topic: /bulbscrew/bulb_pose
     pole_base_pose_topic: /bulbscrew/pole_base_pose
     joint_state_topic: /joint_states
-    gripper_joint_state_topic: /fr3_gripper/joint_states
+    # franka_gripper is NOT started by moveit.launch.py -- that include is
+    # commented out at line 340 -- so it needs its own terminal:
+    #   ros2 launch franka_gripper gripper.launch.py robot_ip:=... namespace:=fr3
+    # Its "namespace" argument has no default and launch fails without one.
+    # With namespace:=fr3 the node comes up as /fr3/franka_gripper, hence these
+    # names (verified live 2026-08-28, NOT the /fr3_gripper/... that MoveIt's
+    # fr3_controllers.yaml implies).
+    gripper_joint_state_topic: /fr3/franka_gripper/joint_states
+    gripper_grasp_action: /fr3/franka_gripper/grasp
+    gripper_move_action: /fr3/franka_gripper/move
     # mocap4r2_optitrack_driver hardcodes header.frame_id="map" on /rigid_bodies
     # and the bridge passes it through unchanged. NOTE this frame is Y-UP; the
     # driver's TF frame "optitrack" is Z-up. Do not mix the two -- see
