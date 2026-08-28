@@ -15,6 +15,18 @@
       franka_robot_state_broadcaster:
         type: franka_robot_state_broadcaster/FrankaRobotStateBroadcaster
 
+      # Kinesthetic teaching: hold the arm against gravity so it can be guided
+      # by hand while FCI stays ON -- so /joint_states keeps publishing real
+      # values and mocap keeps tracking, which Desk's guiding mode does not
+      # allow (there the controllers go inactive and a fallback publisher serves
+      # frozen defaults).
+      #
+      # Claims the same effort interfaces as fr3_arm_controller, so exactly one
+      # of the two may be active. Switch with
+      #   ros2 run franka_bulbscrew guiding_mode --ros-args -p enable:=true|false
+      gravity_compensation_example_controller:
+        type: franka_example_controllers/GravityCompensationExampleController
+
 /**: 
   fr3_arm_controller:
     ros__parameters:
