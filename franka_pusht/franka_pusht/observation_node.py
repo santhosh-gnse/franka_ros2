@@ -101,6 +101,19 @@ class ObservationNode(Node):
         if msg.header.frame_id != self.world:
             self.get_logger().error(f"{key} frame {msg.header.frame_id!r} != {self.world!r}")
             return
+        # Motive publishes exactly (0,0,0) with quaternion (0,0,0,-1) for a rigid
+        # body it knows about but cannot currently see. That is structurally
+        # valid and arrives at full rate, so the freshness checks below would
+        # accept it: the observation would be built from a bogus pose while
+        # observation_valid still reported true, silently corrupting recorded
+        # data rather than failing. A body at the exact mocap origin is never a
+        # real measurement here.
+        p = msg.pose.position
+        if abs(p.x) < 1e-9 and abs(p.y) < 1e-9 and abs(p.z) < 1e-9:
+            self.get_logger().warning(
+                f"{key} is not visible to OptiTrack (all-zero placeholder pose)",
+                throttle_duration_sec=5.0)
+            return
         self.poses[key] = (msg, _stamp_seconds(msg.header.stamp))
 
     def _on_joints(self, msg):
