@@ -42,28 +42,68 @@ in index 2, matching sim.
 
 ## 1. Measured properties of the real rig
 
-Fill these in as they are measured. Everything in §2 follows from them.
+All measured and cross-validated 2026-08-28/29. Everything in §2 follows from
+these. Positions are in `fr3_link0` (Z-up) unless stated.
+
+### Geometry
 
 | quantity | value | how obtained |
 | --- | --- | --- |
-| Table / work surface height in `fr3_link0` | *TBD* | measure directly |
-| Bulb head diameter | **60 mm** | measured; matches the sim's 30 mm-radius sphere exactly |
-| Bulb overall height | **120 mm** | measured; sim is 124 mm (head top +0.071 to tip −0.053) — 3% over |
-| Holder, base square | **85 mm** | measured |
-| Holder, top square | **55 mm** | measured |
-| Holder height | **65 mm** | measured; sim's holder is a 24 mm square, 30 mm tall — **does not match**, see §2.2 |
-| Bulb neck diameter (grasp point) | *verify* | sim: ⌀24 mm at body z = −0.006 |
-| Bulb screw-base diameter | *verify* | sim: ⌀21 mm at z = −0.038. A real E27 is 27 mm |
-| Bulb tip offset along body −z | *verify* | sim: −0.053 |
-| Socket seat, in `map` | *TBD* | `fixed_socket_position` ∘ `socket_seat_offset` |
-| Seat frame orientation vs vertical | *TBD* | must be true vertical, see §0 |
-| Bulb start pose (in its holder) | *TBD* | record like PushT's episode start pose |
-| Home tool tip + joints | *TBD* | `/compute_ik`, gripper vertical, good limit margin |
-| Tool-down orientation | *TBD* | `tf2_echo fr3_link0 fr3_hand_tcp`, xyzw → wxyz |
-| Action scale — linear | `0.10` m/s | `max_linear_speed` (sim ships 0.35) |
-| Action scale — yaw | `0.75` rad/s | `max_yaw_rate` (sim ships 1.5) |
-| Gripper max per finger | `0.04` m | `grip_max`; Franka Hand total opening 80 mm |
-| Control rate | 20 Hz | matches sim |
+| Robot base plane | `z = 0` | definition |
+| Plank / work surface | `z = 0.018` | measured directly |
+| Bulb head diameter | **60 mm** | measured; sim's 30 mm-radius sphere already matches |
+| Bulb overall height | **120 mm** | measured; sim is 124 mm (head top +0.071 to tip −0.053), 3% over |
+| Bulb neck diameter | *unverified* | sim: ⌀24 mm at body z = −0.006 |
+| Bulb screw-base diameter | *unverified* | sim: ⌀21 mm at z = −0.038. A real E27 is 27 mm |
+| **No bulb holder** | — | the bulb stands free on its screw base; delete the sim's `holder` body |
+| Tapered mount 85→55 mm, 65 mm tall | measured | the **socket's** stand, not a bulb holder |
+
+### Task points
+
+| quantity | value | notes |
+| --- | --- | --- |
+| Socket seat (goal) | `[0.5996, 0.0970, 0.0195]` | 0.607 m reach; seat frame 0.52° from true vertical |
+| Bulb start, free-standing | tip at `z = −0.0094`, neck `[0.742, −0.161, 0.038]` | 0.761 m reach; IK margin 39.7° |
+| Bulb start **varies** | hand-placed each episode | randomise the sim spawn to match |
+| Home tool tip | `[0.671, −0.032, 0.250]` | exactly vertical, joint margin 78.7° |
+| Home joints (= sim `QHOME`) | `[0.201812, 0.461781, −0.293619, −1.651913, 0.149214, 2.091641, −0.853753]` | midpoint between bulb and socket |
+| Tool-down orientation | `[0.0, 0.731027, 0.682348, 0.0]` wxyz | sim's `GOAL_QUAT_EE` matches to 0.50° |
+
+### Calibrated transforms (real side only — not sim parameters)
+
+| parameter | value |
+| --- | --- |
+| `fr3_link0 → optitrack` | xyz `2.57022, −1.40307, −0.00480`; xyzw `0.00145, 0.00165, 0.99967, 0.02555` |
+| `pole_base_to_robot_base_translation` | `[−0.074, −0.00924, −0.03365]` |
+| `pole_base_to_robot_base_quaternion_wxyz` | `[0.01351, −0.01733, −0.70912, −0.70475]` |
+| `bulb_marker_to_object_translation` | `[0.00223, −0.05689, −0.00088]` |
+| `bulb_marker_to_object_quaternion_wxyz` | `[0.707107, −0.707107, 0.0, 0.0]` |
+| `fixed_socket_position` | `[2.044912, 0.005265, 1.397291]` (map frame) |
+| `fixed_socket_quaternion_wxyz` | `[0.707852, −0.705547, −0.026774, −0.020802]` |
+
+### Control
+
+| quantity | real value | sim ships |
+| --- | --- | --- |
+| `max_linear_speed` | **0.10** m/s | `MAX_SPEED = 0.35` |
+| `max_yaw_rate` | **0.75** rad/s | `MAX_YAW_RATE = 1.5` |
+| `grip_max` | 0.04 m/finger | `GRIP_MAX = 0.04` ✓ |
+| Gripper total opening | 0.08 m (measured 0.0403/finger open) | ✓ |
+| Grasp point | **head centre, +0.041** | `NECK_OFF = −0.006` ✗ |
+| Control rate | 20 Hz | `CONTROL_FREQ = 20` ✓ |
+| Orientation hold gain | 3.0 | `KP_ROT = 3.0` ✓ |
+| Null-space gain | 0.5 | `KP_NULL = 0.5` ✓ |
+| Workspace bounds (tool, `fr3_link0`) | x `[0.35, 0.85]`, y `[−0.35, 0.30]`, z `[0.02, 0.45]` | sim has none |
+| Collision thresholds | raised to Franka "high" | sim has no reflex |
+
+### Observed from the first demonstration
+
+| quantity | value | implication for sim |
+| --- | --- | --- |
+| Episode length | **83 s (1667 steps)** | sim `horizon = 400` (20 s) is **4× too short** |
+| Yaw saturation | 9.2% of steps at \|action\|=1 | `max_yaw_rate` may need raising on both sides |
+| Linear saturation | 1–2% | fine |
+| Minimum joint margin | **1.5°** | inside Servo's 5.7° halt margin — see §3.7 |
 
 ---
 
@@ -113,38 +153,84 @@ If the real bulb's screw base is an E27 (27 mm) rather than the sim's 21 mm,
 widen `bulb_screw` and the socket cavity together, or the insertion clearance
 will not match.
 
-**The holder needs remodelling — it is the one clear geometry mismatch found so
-far.** The real holder is a tapered cup, 85 mm square at the base narrowing to
-55 mm at the top, 65 mm tall. The sim's is four thin walls forming a 24 mm
-square opening only 30 mm tall. Two consequences:
+**Delete the `holder` body entirely.** There is no bulb holder on the real rig —
+the bulb stands free on its own screw base. Remove the four `hold_*` box geoms
+and the body that carries them, and set the bulb's start `pos` from the measured
+free-standing pose instead of a holder rim.
 
-- With a 60 mm head over a 55 mm opening, the real bulb **rests on the rim**,
-  screw end hanging inside — it is not gripped by the walls the way the sim's
-  is. That sets the start pose height, and therefore where the gripper must go
-  to reach the neck.
-- The real cup is far bulkier, so it is a genuine obstacle for the gripper on
-  approach and lift. The sim will under-represent collisions there.
+Two things to watch when you do:
 
-Replace the four `hold_*` box geoms with a tapered cup of the real dimensions,
-and set the bulb's start `pos` from where it actually rests on the rim rather
-than from the sim's current spawn height.
+- **The sim bulb may not stand up on its own.** Its only ground contact is
+  `bulb_tip_flat`, a 16 × 16 mm box, supporting a 120 mm tall body — a marginal
+  footprint. The real bulb is stable on its base, so if the sim one topples,
+  widen that geom to the real screw base's diameter (measure it; a standard E27
+  is 27 mm against the sim's 21 mm) rather than reinstating a holder. Check this
+  before generating demonstrations: a bulb that falls over at reset silently
+  ruins every episode.
+- The tapered 85 → 55 mm, 65 mm tall piece measured on the rig is the
+  **socket's** mount, not a bulb holder. Model it under the socket if it is
+  bulky enough to matter for collisions — the gripper approaches the socket
+  closely during insertion.
 
-### 2.3 `environment.py` constants
+**The start pose varies between episodes**, because the bulb is placed by hand.
+`bulbscrew_mjx` currently spawns it at one fixed pose, so it should randomise
+the start over whatever spread the real placement actually produces. Training on
+a fixed spawn and deploying against a varying one is exactly the sort of
+mismatch that surfaces late and looks like a policy failure. Record the spread
+from the first batch of episodes and match it.
+
+### 2.3 Grasp point: the head, not the neck
+
+The real bulb is held by its glass **body**, not the neck: the jaws close at
+59.7 mm, across the 60 mm head at its widest point, putting the TCP at the head
+centre. The neck is small and fragile and is not a practical grip.
+
+So in `environment.py`:
 
 ```python
-QHOME       = <real HOME_JOINTS>       # from ps5_teleop_node
-MAX_SPEED   = 0.10                     # was 0.35  <-- see warning
-MAX_YAW_RATE = 0.75                    # was 1.5   <-- see warning
+NECK_OFF = 0.041      # was -0.006; the head centre, not the neck
 ```
 
-**`MAX_SPEED` and `MAX_YAW_RATE` are what silently ruin training.** The recorded
-action is normalised to [−1, 1] and multiplied by these. Leave the sim at 0.35
-while recording at 0.10 and every demonstration reads as 3.5× faster than it was
-performed. Same for yaw. Raise both sides together, and set them from the
-*achieved* speed, not the commanded one — on PushT the achieved speed ran ~25%
-below the command.
+and widen whatever the FSM expert uses as its grasp target to match. The name
+is now misleading -- it is the grasp point, not the neck.
 
-### 2.4 Already matching — do not change
+This matters because observation dims 7:10 are the tool relative to this point.
+If the sim grasps the neck while the real robot grasps the head, those three
+dims describe a grasp that never happens, and a policy trained on them will
+reach for the wrong place.
+
+Note the head is a 60 mm sphere in an 80 mm jaw, so the grip has only 10 mm of
+clearance per side and the bulb will pendulum about it -- the body hangs 120 mm
+below. Check the sim reproduces that, since it affects insertion.
+
+### 2.4 `environment.py` constants
+
+```python
+QHOME = np.array([0.201812, 0.461781, -0.293619,
+                  -1.651913, 0.149214, 2.091641, -0.853753])
+
+MAX_SPEED    = 0.10        # was 0.35   <-- see warning
+MAX_YAW_RATE = 0.75        # was 1.5    <-- see warning
+NECK_OFF     = 0.041       # was -0.006; the head centre, see 2.3
+horizon      = 1700        # was 400; the first real demo took 1667 steps
+```
+
+`GOAL_POS_EE` should be the home tool tip, `[0.671, -0.032, 0.250]`, and the
+scene's socket and bulb bodies placed per §2.2.
+
+**`MAX_SPEED` and `MAX_YAW_RATE` are what silently ruin training.** The recorded
+action is normalised to [-1, 1] and multiplied by these. Leave the sim at 0.35
+while recording at 0.10 and every demonstration reads as 3.5x faster than it was
+performed. Same for yaw. Set them from the *achieved* speed, not the commanded
+one.
+
+**The horizon matters more than it looks.** The first hand-guided demonstration
+ran 83 s -- 1667 steps -- against the sim's 400-step (20 s) horizon. A sim
+episode would be truncated before a comparable trajectory could finish, so the
+policy would never see the task completed. Either raise the horizon or expect
+faster demonstrations; do not leave them mismatched.
+
+### 2.5 Already matching — do not change
 
 | | value | |
 | --- | --- | --- |
@@ -181,6 +267,20 @@ below the command.
    during insertion will differ.
 6. **Workspace bounds.** Real `safety_node` clamps; the sim has no such clamp.
    Keep the bounds off the working region.
+7. **Hand-guided demonstrations can visit poses the robot cannot reproduce.**
+   The first demo reached a minimum joint-limit margin of **1.5 deg**, well
+   inside Servo's `joint_limit_margin` of 0.10 rad (5.7 deg). Guiding by hand
+   has no such limit, but a policy deployed through `servo_ik_node` would halt
+   there. Two consequences: demonstrations should be guided through
+   comfortable arm configurations, and the sim should arguably enforce the same
+   margin so it does not learn trajectories the hardware refuses to execute.
+8. **Redundancy resolution differs between demonstration and deployment.**
+   Guiding by hand means the operator picks the elbow; at deployment
+   `servo_ik_node` picks it via the null-space term. `arm_qpos`/`arm_qvel` are
+   14 of the 25 observation dims, so those distributions can diverge -- the same
+   mismatch that made the PushT policy stall. Compare a recorded `arm_qpos`
+   against what `servo_ik_node` produces for the same tool path before trusting
+   a large dataset.
 
 ---
 

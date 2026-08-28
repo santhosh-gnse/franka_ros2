@@ -78,43 +78,96 @@ and make the task unsolvable while everything still looked healthy.
 
 ## Running
 
-Bring-up differs from PushT — the Franka Hand replaces the pusher:
+There are **two separate modes**. They use different launch files and must not
+be run together -- the teleop stack commands the arm, and nothing may command it
+while it is being moved by hand.
+
+Common to both, in this order:
 
 ```bash
-# 1. OptiTrack (remember: a fresh relaunch always needs re-activating)
+# 1. OptiTrack  (a fresh relaunch always comes up inactive; activating is required)
 ros2 launch mocap4r2_optitrack_driver optitrack2.launch.py
 ros2 lifecycle set /mocap4r2_optitrack_driver_node activate
 
-# 2. Robot, with the gripper (BOTH arguments are needed: ee_id defaults to 'none')
+# 2. Arm.  BOTH arguments are needed: ee_id defaults to 'none', so load_gripper
+#    alone silently loads no end effector and the frames stop at fr3_link8.
+#    Desk must be in Execution mode with FCI active, and the Franka Hand
+#    enabled as the end effector.
 ros2 launch franka_fr3_moveit_config moveit.launch.py \
   robot_ip:=10.90.90.177 use_fake_hardware:=false \
   load_gripper:=true ee_id:=franka_hand
 
-# 3. Pipeline
+# 3. Gripper, own terminal.  moveit.launch.py builds this include but never adds
+#    it (commented out at line 340), and 'namespace' has no default.
+ros2 launch franka_gripper gripper.launch.py robot_ip:=10.90.90.177 namespace:=fr3
+```
+
+### Mode A — kinesthetic teaching (recommended for demonstrations)
+
+Guide the arm by hand. Preferred for this task: it is contact-rich, and your
+hands feel the threads engage in a way a gamepad cannot.
+
+```bash
+ros2 launch franka_bulbscrew bulbscrew_kinesthetic.launch.py
+ros2 run franka_bulbscrew guiding_mode --ros-args -p enable:=true
+```
+
+The arm goes limp apart from gravity support. **Keep a hand on it the first
+time.** Gamepad, since both hands are on the robot:
+
+| button | action |
+| --- | --- |
+| PS (10) | home the arm, then hand it back to guiding |
+| Circle (1) | start episode |
+| Square (3) | stop episode and save |
+| Cross / X (0) | close gripper |
+| Triangle (2) | open gripper |
+
+Per episode: **PS** -> place the bulb -> **Circle** -> guide the task -> **Square**
+as soon as the bulb is seated. Homing is refused while recording, since that
+motion would be captured as part of the demonstration.
+
+Return to normal control before teleop or anything that commands the arm:
+
+```bash
+ros2 run franka_bulbscrew guiding_mode --ros-args -p enable:=false
+```
+
+Episodes land in `~/bulbscrew_data/kinesthetic_<timestamp>/`. Actions are
+*derived* from the motion produced -- see `kinesthetic_recorder_node`.
+
+### Mode B — gamepad teleoperation
+
+The arm is commanded through `safety_node` -> `servo_ik_node` -> Servo. Use this
+to test the control path, validate directions, or deploy a policy.
+
+```bash
 ros2 launch franka_bulbscrew bulbscrew_collect.launch.py
 ```
 
-Servo must have `apply_twist_commands_about_ee_frame: false` (already set in
-`fr3_servo_config.yaml` for PushT). With the default `true`, twists are applied
-about the tool frame — whose +Z points *down* when the gripper points down —
-which inverts vertical motion and rotates the horizontal plane.
-
-## Controller mapping (DualSense)
-
 | control | action |
-|---|---|
-| L1 (4) | dead-man — nothing moves unless held |
+| --- | --- |
+| L1 (4) | dead-man -- nothing moves unless held |
 | left stick | x / y translation |
-| R1 (5) / L2 (2) | up / down (z) |
-| right stick X | wrist yaw — screw in / out |
-| R2 (7) / Square (3) | close / open gripper (latched) |
+| R2 / L2 triggers | up / down (analog, partial press = partial speed) |
+| right stick X | wrist yaw -- the screwing DoF |
+| R1 (5) / Square (3) | close / open gripper (latched) |
 | PS (10) | home |
-| Cross (0) | start episode (homes first) |
-| Circle (1) | stop episode (saves, then homes) |
+| Cross (0) / Circle (1) | start / stop episode |
 
-The gripper is latched rather than proportional: a bulb needs a settled grip, a
-stick axis would jitter the width every tick, and latching means releasing the
-dead-man does not drop the bulb.
+Servo must have `apply_twist_commands_about_ee_frame: false` (already set). With
+the default `true`, twists are applied about the tool frame -- whose +Z points
+*down* when the gripper points down -- inverting vertical motion and rotating the
+horizontal plane.
+
+### Policy deployment
+
+```bash
+ros2 launch franka_bulbscrew bulbscrew_deploy.launch.py
+```
+
+Runs `policy_node` in place of teleop, with `command_source: policy`. There is
+**no dead-man** in this mode.
 
 ## Collecting data
 

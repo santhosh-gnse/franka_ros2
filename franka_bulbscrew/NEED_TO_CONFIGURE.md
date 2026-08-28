@@ -34,8 +34,9 @@ Check:
 
 ```bash
 ros2 control list_controllers          # all active
-ros2 topic echo /fr3_gripper/joint_states --once
-ros2 action list | grep fr3_gripper    # grasp, move, homing
+ros2 launch franka_gripper gripper.launch.py robot_ip:=10.90.90.177 namespace:=fr3
+ros2 topic echo /fr3/franka_gripper/joint_states --once   # fr3_finger_joint1/2
+ros2 action list | grep franka_gripper                    # grasp, move, homing
 ros2 run tf2_ros tf2_echo fr3_link0 fr3_hand_tcp
 ```
 
