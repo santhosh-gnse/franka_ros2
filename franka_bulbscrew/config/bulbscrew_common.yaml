@@ -1,0 +1,44 @@
+/**:
+  ros__parameters:
+    control_rate_hz: 20.0
+    observation_timeout_s: 0.15
+    action_timeout_s: 0.15
+    pose_timeout_s: 0.15
+    joint_names: [fr3_joint1, fr3_joint2, fr3_joint3, fr3_joint4, fr3_joint5, fr3_joint6, fr3_joint7]
+    gripper_joint_names: [fr3_finger_joint1, fr3_finger_joint2]
+    observation_topic: /bulbscrew/observation
+    observation_valid_topic: /bulbscrew/observation_valid
+    teleop_action_topic: /bulbscrew/teleop_action
+    policy_action_topic: /bulbscrew/policy_action
+    executed_action_topic: /bulbscrew/executed_action
+    deadman_topic: /bulbscrew/deadman
+    gripper_command_topic: /bulbscrew/gripper_width
+    # safety_node does not talk to Servo directly: servo_ik_node consumes this
+    # twist, resolves it into joint velocities with the sim's null-space term,
+    # and publishes JointJog to Servo instead.
+    servo_command_topic: /bulbscrew/desired_twist
+    dataset_root: ~/bulbscrew_data
+
+    # --- action scaling -------------------------------------------------------
+    # These are what the recorded demonstrations are LABELLED with. Whatever is
+    # set here must be mirrored by MAX_SPEED / MAX_YAW_RATE in bulbscrew_mjx, or
+    # an action of 1.0 means a different velocity in sim than on the robot. The
+    # sim ships 0.35 m/s and 1.5 rad/s; start slower on hardware and raise both
+    # sides together. See SIM_ALIGNMENT.md.
+    max_linear_speed: 0.10
+    max_yaw_rate: 0.75
+    grip_max: 0.04
+
+    # --- orientation hold -----------------------------------------------------
+    # Roll and pitch are servoed to keep the gripper vertical; yaw is COMMANDED
+    # by action[3] and overwrites the hold's z term. That substitution is the
+    # screwing degree of freedom -- see safety_node. Gain matches the sim's
+    # KP_ROT = 3.0.
+    orientation_hold_gain: 3.0
+    max_angular_speed: 1.5
+    # PLACEHOLDER. Measure the real gripper-down orientation at the home pose:
+    #   ros2 run tf2_ros tf2_echo fr3_link0 fr3_hand_tcp
+    # and convert the xyzw reading to wxyz. On PushT the equivalent placeholder
+    # was 44 deg away from the real tool pose, which would have commanded a
+    # spurious rotation had it been enabled blind.
+    hold_quaternion_wxyz: [0.0, 1.0, 0.0, 0.0]

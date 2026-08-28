@@ -1,0 +1,91 @@
+/**:
+  ros__parameters:
+    # Output topics of optitrack_bridge_node.
+    bulb_pose_topic: /bulbscrew/bulb_pose
+    pole_base_pose_topic: /bulbscrew/pole_base_pose
+    joint_state_topic: /joint_states
+    gripper_joint_state_topic: /fr3_gripper/joint_states
+    # mocap4r2_optitrack_driver hardcodes header.frame_id="map" on /rigid_bodies
+    # and the bridge passes it through unchanged. NOTE this frame is Y-UP; the
+    # driver's TF frame "optitrack" is Z-up. Do not mix the two -- see
+    # SIM_ALIGNMENT.md section 0.
+    optitrack_world_frame: map
+    robot_base_frame: fr3_link0
+    tcp_frame: fr3_hand_tcp
+
+    rigid_bodies_topic: /rigid_bodies
+    bulb_rigid_body_name: bulb-trirl
+    pole_base_rigid_body_name: franka_pole_base
+
+    command_source: teleop
+
+    # ==========================================================================
+    # NOTHING BELOW IS CALIBRATED YET. Both flags stay false until the values
+    # are measured, and safety_node outputs zero while either is false.
+    # Work through NEED_TO_CONFIGURE.md in order.
+    # ==========================================================================
+    calibration_configured: false
+    workspace_configured: false
+
+    # --- socket (bolted down, measured once) ----------------------------------
+    # Position and orientation of the socket body in the OptiTrack "map" frame.
+    # The seat -- the point the bulb's screw tip must reach -- is this pose
+    # composed with socket_seat_offset (18 mm up the socket's own z, from the
+    # sim's SEAT_OFF).
+    #
+    # The seat frame's ORIENTATION is what fixes the observation's axis layout.
+    # Its z must be true vertical, or the vertical component lands in the wrong
+    # slot while every number still looks plausible. On PushT that exact mistake
+    # went unnoticed for a whole session.
+    fixed_socket_position: [0.0, 0.0, 0.0]
+    fixed_socket_quaternion_wxyz: [1.0, 0.0, 0.0, 0.0]
+    socket_seat_offset: [0.0, 0.0, 0.018]
+
+    # --- bulb (tracked as "bulb-trirl") ---------------------------------------
+    # Motive's rigid-body frame is NOT the sim's bulb body frame: its origin is
+    # wherever Motive put it and its axes follow Motive's Y-up convention. This
+    # transform maps marker -> canonical bulb body, whose -z axis carries the
+    # tip and neck offsets below.
+    #
+    # Do NOT "validate" this by placing the bulb at the socket and checking the
+    # relative pose is small -- that is true for any frame convention and proves
+    # nothing. Calibrate it against known geometry instead (NEED_TO_CONFIGURE.md
+    # step 3 describes the sphere-probe method that worked on PushT).
+    bulb_marker_to_object_translation: [0.0, 0.0, 0.0]
+    bulb_marker_to_object_quaternion_wxyz: [1.0, 0.0, 0.0, 0.0]
+    # Along the canonical bulb body's z axis, from bulbscrew_mjx.
+    #
+    # The sim's bulb head is a 30 mm-radius sphere = 60 mm diameter, which
+    # MATCHES the real bulb (measured 2026-08-28). The rest of the sim geometry,
+    # to check against the real part: neck (the grasp point) is a 24 mm-diameter
+    # capsule at z = -0.006, the screw base is 21 mm diameter at z = -0.038, and
+    # the tip sits at z = -0.053. The neck is well inside the Franka Hand's 80 mm
+    # opening. Note 21 mm is narrower than a standard E27 base (27 mm) -- if the
+    # real bulb is an E27, these offsets and the socket cavity both need
+    # revisiting on the sim side.
+    #
+    # Real measurements so far (2026-08-28): bulb 60 mm head diameter, 120 mm
+    # overall height (sim 124 mm -- 3% over, fine). Holder is a tapered cup,
+    # 85 mm square base narrowing to 55 mm at the top, 65 mm tall. Since the
+    # 60 mm head sits over a 55 mm opening the bulb RESTS ON THE RIM with its
+    # screw end hanging inside -- that fixes the start height and hence where
+    # the gripper must reach for the neck. The sim's holder is a 24 mm square
+    # only 30 mm tall and needs remodelling; see SIM_ALIGNMENT.md.
+    bulb_tip_offset: -0.053
+    bulb_neck_offset: -0.006
+
+    # --- robot base anchor ----------------------------------------------------
+    # Fixed offset from the franka_pole_base marker's Motive frame to fr3_link0.
+    # Tracked live so the transform self-corrects if the stand is bumped.
+    # Reusable from franka_pusht if the stand and marker have not moved --
+    # verify rather than assume.
+    pole_base_to_robot_base_translation: [-0.03004, 0.01107, -0.05296]
+    pole_base_to_robot_base_quaternion_wxyz: [-0.02892, 0.00431, 0.6888, 0.72436]
+
+    # --- workspace ------------------------------------------------------------
+    # End-effector bounds relative to the socket seat, in the seat frame.
+    # Unlike PushT this task is genuinely 3-D: the bulb is lifted and carried,
+    # so z is a real bound. Measure each edge before setting workspace_configured.
+    workspace_x: [0.0, 0.0]
+    workspace_y: [0.0, 0.0]
+    workspace_z: [0.0, 0.0]
