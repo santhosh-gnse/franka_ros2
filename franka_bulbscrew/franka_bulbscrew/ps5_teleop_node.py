@@ -11,9 +11,9 @@ Controller mapping (mirrors franka_pusht's, extended for the extra DoF):
 
     L1 (4)          dead-man; nothing moves unless held
     left stick      x / y translation
-    R1 (5) / L2 (2) up / down (z)
+    R2 / L2         up / down (z), analog triggers
     right stick X   wrist yaw -- screw in and out
-    R2 (7) / Square close / open the gripper (latched, not momentary)
+    R1 / Square     close / open the gripper (latched, not momentary)
     PS (10)         home
     Cross (0)       start episode (homes first)
     Circle (1)      stop episode (saves, then homes)
@@ -59,13 +59,18 @@ ENABLE_BUTTON = 4         # L1
 HOME_BUTTON = 10          # PS
 START_COLLECT_BUTTON = 0  # Cross
 STOP_COLLECT_BUTTON = 1   # Circle
-UP_BUTTON = 5             # R1
-DOWN_BUTTON = 2           # L2 (digital)
-CLOSE_BUTTON = 7          # R2 (digital)
+CLOSE_BUTTON = 5          # R1
 OPEN_BUTTON = 3           # Square
 AXIS_LEFT_X = 0
 AXIS_LEFT_Y = 1
 AXIS_RIGHT_X = 3
+# L2 and R2 are ANALOG triggers on the DualSense, not buttons: they rest at
+# +1.0 and go to -1.0 fully pressed (verified on this controller). An earlier
+# mapping read them as button indices, which silently picked up Triangle
+# instead and made "down" do nothing.
+AXIS_L2 = 2               # trigger -> move down
+AXIS_R2 = 5               # trigger -> move up
+TRIGGER_FLOOR = 0.05
 # Sign of each axis in the seat frame. Flip if the arm moves opposite the stick.
 SIGN_X = -1.0
 SIGN_Y = -1.0
@@ -151,7 +156,7 @@ class BulbScrewTeleop(Node):
         self._edge(msg, HOME_BUTTON, self._on_home)
         self._edge(msg, START_COLLECT_BUTTON, self._on_start_collect)
         self._edge(msg, STOP_COLLECT_BUTTON, self._on_stop_collect)
-        self._edge(msg, CLOSE_BUTTON, lambda: setattr(self, "_grip_open", False))
+        self._edge(msg, CLOSE_BUTTON, lambda: setattr(self, "_grip_open", False))  # R1
         self._edge(msg, OPEN_BUTTON, lambda: setattr(self, "_grip_open", True))
 
     def _edge(self, msg, index, callback):
@@ -177,8 +182,12 @@ class BulbScrewTeleop(Node):
             sy = SIGN_Y * float(joy.axes[AXIS_LEFT_X])
             if math.hypot(sx, sy) > DEADZONE:
                 action[0], action[1] = sx, sy
-            action[2] = Z_SPEED * ((1.0 if self._held(joy, UP_BUTTON) else 0.0)
-                                   - (1.0 if self._held(joy, DOWN_BUTTON) else 0.0))
+            def trigger(axis):
+                # rest +1 -> 0, fully pressed -1 -> 1
+                v = (1.0 - float(joy.axes[axis])) * 0.5
+                return v if v > TRIGGER_FLOOR else 0.0
+            if max(AXIS_L2, AXIS_R2) < len(joy.axes):
+                action[2] = Z_SPEED * (trigger(AXIS_R2) - trigger(AXIS_L2))
             yaw = SIGN_YAW * float(joy.axes[AXIS_RIGHT_X])
             if abs(yaw) > DEADZONE:
                 action[3] = yaw
