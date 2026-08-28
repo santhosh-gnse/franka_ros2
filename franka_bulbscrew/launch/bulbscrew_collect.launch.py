@@ -21,6 +21,8 @@ def generate_launch_description():
              parameters=parameters, output="screen"),
         Node(package="franka_bulbscrew", executable="servo_ik_node",
              parameters=parameters, output="screen"),
+        Node(package="franka_bulbscrew", executable="collision_behavior_node",
+             parameters=parameters, output="screen"),
         Node(package="franka_bulbscrew", executable="gripper_node",
              parameters=parameters, output="screen"),
         Node(package="franka_bulbscrew", executable="data_collection_node",

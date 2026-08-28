@@ -32,6 +32,7 @@ setup(
             "safety_node = franka_bulbscrew.safety_node:main",
             "servo_ik_node = franka_bulbscrew.servo_ik_node:main",
             "gripper_node = franka_bulbscrew.gripper_node:main",
+            "collision_behavior_node = franka_bulbscrew.collision_behavior_node:main",
             "data_collection_node = franka_bulbscrew.data_collection_node:main",
             "policy_node = franka_bulbscrew.policy_node:main",
             "extract_success_trajectories = franka_bulbscrew.extract_success_trajectories:main",

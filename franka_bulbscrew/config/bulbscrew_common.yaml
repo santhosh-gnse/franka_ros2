@@ -19,6 +19,24 @@
     servo_command_topic: /bulbscrew/desired_twist
     dataset_root: ~/bulbscrew_data
 
+    # --- collision reflex ------------------------------------------------------
+    # Franka's default thresholds are tuned for free-space motion and trip on the
+    # forces this task generates on purpose: squeezing the glass, lifting the
+    # bulb against its own weight, and loading the wrist while turning. Every
+    # such trip drops the robot into the red error state.
+    #
+    # collision_behavior_node re-applies these at startup, because they are
+    # runtime state -- franka_hardware restores its defaults on every connect, so
+    # a manual service call is lost at the next moveit.launch.py restart.
+    #
+    # SAFETY: this is the reflex that stops the arm when it hits something it
+    # should not. Raising it trades that protection for tolerance. Lower `scale`
+    # to make the arm react sooner (0.5 is roughly the Franka default).
+    collision_service: /service_server/set_force_torque_collision_behavior
+    torque_thresholds: [40.0, 40.0, 38.0, 38.0, 32.0, 28.0, 24.0]
+    force_thresholds: [40.0, 40.0, 40.0, 50.0, 50.0, 50.0]
+    scale: 1.0
+
     # --- action scaling -------------------------------------------------------
     # These are what the recorded demonstrations are LABELLED with. Whatever is
     # set here must be mirrored by MAX_SPEED / MAX_YAW_RATE in bulbscrew_mjx, or
