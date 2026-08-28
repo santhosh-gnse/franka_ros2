@@ -37,7 +37,9 @@
     # base anchor (0.04 mm loop closure), bulb frame (tip holds 18.0 mm through
     # a 357 deg spin), socket seat (0.52 deg from vertical).
     calibration_configured: true
-    workspace_configured: false
+    # PROVISIONAL bounds only -- see workspace_* below. Enabled so the arm can
+    # be driven to find the real edges.
+    workspace_configured: true
 
     # --- socket (bolted down, measured once) ----------------------------------
     # Position and orientation of the socket body in the OptiTrack "map" frame.
@@ -161,9 +163,24 @@
     pole_base_to_robot_base_quaternion_wxyz: [0.01351, -0.01733, -0.70912, -0.70475]
 
     # --- workspace ------------------------------------------------------------
-    # End-effector bounds relative to the socket seat, in the seat frame.
-    # Unlike PushT this task is genuinely 3-D: the bulb is lifted and carried,
-    # so z is a real bound. Measure each edge before setting workspace_configured.
-    workspace_x: [0.0, 0.0]
-    workspace_y: [0.0, 0.0]
-    workspace_z: [0.0, 0.0]
+    # Bounds on fr3_hand_tcp in fr3_link0 -- a STATIC frame. (Not the
+    # observation's ee_rel_neck: that is measured against the bulb, which moves
+    # and is near-constant once grasped, so clamping it would bound nothing.)
+    #
+    # PROVISIONAL, 2026-08-28. Generous box chosen only so the arm can be driven
+    # at all, sized to contain the three known task points with margin:
+    #   bulb neck (grasp)  [0.742, -0.161, 0.038]
+    #   socket seat (goal) [0.600,  0.097, 0.020]
+    #   home               [0.671, -0.032, 0.250]
+    # z stays above 0.02 to keep the tool off the work surface; note the grasp
+    # itself is at 0.038, so the lower bound cannot be raised much.
+    #
+    # NOT the measured-safe envelope -- step 6 of NEED_TO_CONFIGURE.md is still
+    # owed. Drive to each real edge, read the tool pose, and tighten. Keep the
+    # bounds off the working region: when clamped, executed_action is zeroed
+    # while the operator is still commanding, which is self-consistent but makes
+    # unnatural demonstrations, and on PushT a too-tight bound silently stalled
+    # the policy mid-episode.
+    workspace_x: [0.35, 0.85]
+    workspace_y: [-0.35, 0.30]
+    workspace_z: [0.02, 0.45]

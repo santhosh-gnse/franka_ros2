@@ -55,10 +55,9 @@ class SafetyNode(Node):
             "gripper_command_topic": "/bulbscrew/gripper_width",
             "calibration_configured": False,
             "workspace_configured": False,
-            # Bounds on the end effector relative to the socket seat, in the
-            # seat frame -- i.e. observation indices 7:10 shifted by the bulb
-            # neck. Unlike PushT this task is genuinely 3-D, so z is a real
-            # bound and not a formality.
+            # Bounds on the TOOL (fr3_hand_tcp) in fr3_link0 -- a static frame.
+            # Unlike PushT this task is genuinely 3-D, so z is a real bound and
+            # not a formality: the bulb is lifted and carried.
             "workspace_x": [0.0, 0.0], "workspace_y": [0.0, 0.0], "workspace_z": [0.0, 0.0],
             # Orientation hold, matching bulbscrew_mjx's KP_ROT = 3.0.
             "orientation_hold_gain": 3.0,
@@ -76,6 +75,8 @@ class SafetyNode(Node):
         self.obs_time = None
         self.obs_valid = False
         self.deadman = False
+        # Start open; only an explicit command changes this.
+        self.last_width = float(self.get_parameter("grip_max").value)
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
@@ -107,13 +108,27 @@ class SafetyNode(Node):
         self.observation = np.asarray(msg.data, dtype=np.float64)
         self.obs_time = self._now()
 
-    def _tool_orientation(self):
+    def _tool_pose(self):
+        """Tool position in the robot base frame, from forward kinematics."""
+        tf = self._lookup_tool()
+        if tf is None:
+            return None
+        t = tf.transform.translation
+        return np.array([t.x, t.y, t.z])
+
+    def _lookup_tool(self):
         try:
             tf = self.tf_buffer.lookup_transform(
                 self.get_parameter("robot_base_frame").value,
                 self.get_parameter("tcp_frame").value, Time())
         except (tf2_ros.LookupException, tf2_ros.ConnectivityException,
                 tf2_ros.ExtrapolationException):
+            return None
+        return tf
+
+    def _tool_orientation(self):
+        tf = self._lookup_tool()
+        if tf is None:
             return None
         r = tf.transform.rotation
         return np.array([r.w, r.x, r.y, r.z])
@@ -135,17 +150,30 @@ class SafetyNode(Node):
         action = np.clip(self.actions[source], -1.0, 1.0) if safe else np.zeros(5)
         safe &= bool(np.all(np.isfinite(action)))
 
-        if safe:
+        tool = self._tool_pose() if safe else None
+        if safe and tool is not None:
+            # Bound the TOOL IN fr3_link0, not observation[7:10]. That index is
+            # ee_rel_neck here -- the gripper relative to the BULB, which moves
+            # and is nearly constant once grasped, so clamping it would bound
+            # nothing. (PushT's equivalent index was relative to a fixed goal,
+            # which is why the same pattern worked there.) A workspace limit has
+            # to be against something static, and the robot's own base frame is
+            # the natural choice.
+            #
             # Per-axis clamp only: block driving further past a bound but always
             # allow motion back toward the safe region. An all-or-nothing gate
             # deadlocks the arm the moment any axis drifts out, with no action
             # able to recover it -- that bug bit PushT and is easy to reintroduce.
-            ee = self.observation[7:10]
             bounds = [g(n).value for n in ("workspace_x", "workspace_y", "workspace_z")]
             for i in range(3):
                 low, high = bounds[i]
-                if (ee[i] <= low and action[i] < 0) or (ee[i] >= high and action[i] > 0):
+                if (tool[i] <= low and action[i] < 0) or (tool[i] >= high and action[i] > 0):
                     action[i] = 0.0
+        elif safe:
+            # No transform: skip the clamp rather than zeroing everything, so a
+            # missing TF can never deadlock the arm.
+            self.get_logger().warning("no tool transform; workspace clamp inactive",
+                                      throttle_duration_sec=5.0)
         else:
             action = np.zeros(5)
 
@@ -174,10 +202,17 @@ class SafetyNode(Node):
         twist.twist.angular.x, twist.twist.angular.y, twist.twist.angular.z = map(float, angular)
         self.twist_pub.publish(twist)
 
-        # Gripper: [-1, 1] -> [0, grip_max] per finger, as in the sim. Held open
-        # when unsafe rather than closed, so a fault never clamps on the bulb.
+        # Gripper: [-1, 1] -> [0, grip_max] per finger, as in the sim.
+        #
+        # When NOT safe, hold the last commanded width rather than forcing the
+        # jaws open. Forcing open means every dead-man release drops the bulb --
+        # and the operator releases it constantly. Holding is also the safer
+        # failure for glass. The width only ever changes on an explicit operator
+        # command, never as a side effect of the gates.
         grip_max = g("grip_max").value
-        width = (action[4] + 1.0) * 0.5 * grip_max if safe else grip_max
+        if safe:
+            self.last_width = (action[4] + 1.0) * 0.5 * grip_max
+        width = self.last_width
         self.grip_pub.publish(Float32(data=float(width)))
         self.action_pub.publish(Float32MultiArray(data=action.astype(np.float32).tolist()))
 
