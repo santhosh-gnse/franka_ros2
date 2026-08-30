@@ -39,8 +39,25 @@ import os
 
 import numpy as np
 
-# bulbscrew_mjx PushT.success_threshold
-DEFAULT_THRESHOLD = 0.02
+# bulbscrew_mjx's own criterion, d_seat + 0.1*upright_err. Kept for
+# comparability, but it is NOT the default here -- see the note below.
+SIM_THRESHOLD = 0.02
+
+# Screwing is not finished when the bulb first reaches the seat pose.
+#
+# The sim's criterion is yaw-invariant (deliberately -- a bulb is a body of
+# revolution), so it cannot tell "resting in the socket mouth" from "screwed
+# tight". On the real rig the bulb needs 3-4 full turns to seat, and descends
+# ~2.8 mm per turn. Measured on kinesthetic_20260830_190008: the sim criterion
+# fired at step 734 of 1581 with the bulb still 5.6 mm proud and only 96 deg of
+# spin done, i.e. it would have cut away 2 of the 2.4 turns of actual screwing
+# and taught a policy to drop the bulb in the hole and stop.
+#
+# Depth is what distinguishes them, because the seat was calibrated with the
+# bulb screwed fully home: 5.6 mm proud when merely resting, 0.2 mm when tight.
+# The hold requirement rejects the moment it passes through on the way down.
+DEFAULT_DEPTH = 0.001          # m, distance from the seat
+DEFAULT_HOLD_S = 2.0           # s it must stay there
 # Sessions recorded before the frame fixes landed; see the module docstring.
 PRE_FIX_SESSION_PREFIXES = ()   # no known-bad sessions for this task yet
 
@@ -62,8 +79,16 @@ def main(argv=None):
                         help="dataset root holding session_* directories")
     parser.add_argument("--out", default="success_trajectories",
                         help="output directory, relative to --root unless absolute")
-    parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD,
-                        help="success threshold on d_seat + 0.1*upright_err (sim default 0.05)")
+    parser.add_argument("--depth", type=float, default=DEFAULT_DEPTH,
+                        help="tip-to-seat distance counting as screwed home (m)")
+    parser.add_argument("--hold-s", type=float, default=DEFAULT_HOLD_S,
+                        help="how long it must stay within --depth to count")
+    parser.add_argument("--rate-hz", type=float, default=20.0)
+    parser.add_argument("--sim-criterion", action="store_true",
+                        help="truncate on bulbscrew_mjx's d_seat + 0.1*upright_err instead. "
+                             "Cuts mid-screw on real demonstrations; for comparison only.")
+    parser.add_argument("--threshold", type=float, default=SIM_THRESHOLD,
+                        help="threshold used with --sim-criterion")
     parser.add_argument("--include-pre-fix-data", action="store_true",
                         help="also process pre-2026-08-20 sessions (their frames are "
                              "scrambled, so the criterion is meaningless -- see the docstring)")
@@ -97,7 +122,15 @@ def main(argv=None):
                 print(f"{label:<44} {len(next_states):>6} {task_err.min():>9.4f} "
                       f"{'-':>8} {'skip':>6}   pre-fix frames")
                 continue
-            hit = np.flatnonzero(task_err < args.threshold)
+            if args.sim_criterion:
+                hit = np.flatnonzero(task_err < args.threshold)
+            else:
+                hold = max(1, int(round(args.hold_s * args.rate_hz)))
+                home = d_seat < args.depth
+                # first index from which it stays home for the whole hold window
+                run = np.convolve(home.astype(int), np.ones(hold, dtype=int), mode="valid")
+                stable = np.flatnonzero(run == hold)
+                hit = stable[:1]
             if hit.size == 0:
                 unsolved += 1
                 print(f"{label:<44} {len(next_states):>6} {task_err.min():>9.4f} "
@@ -117,7 +150,9 @@ def main(argv=None):
 
     print("-" * len(header))
     total = sum(kept)
-    print(f"\n{len(kept)} trajectories solved (task_err < {args.threshold}) -> {out}")
+    criterion = (f"task_err < {args.threshold}" if args.sim_criterion
+                 else f"d_seat < {args.depth} m held for {args.hold_s} s")
+    print(f"\n{len(kept)} trajectories solved ({criterion}) -> {out}")
     if kept:
         print(f"  {total} transitions, {total / 20.0:.1f} s at 20 Hz")
         print(f"  lengths: {kept}")

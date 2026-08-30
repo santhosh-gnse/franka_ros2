@@ -361,6 +361,57 @@ check that would have caught this on the first episode.
 the real object, not a measurement. Mark it as such, and never let it be an
 input to the calibration that is supposed to verify it.
 
+### B17. The observation is in the seat frame, not the robot base frame
+
+`obs[0:3]` (bulb tip relative to the seat) and `obs[7:10]` (tool relative to the
+grasp point) are expressed in the **seat frame**. On this rig that frame is
+rotated **150.7° about z** relative to `fr3_link0`.
+
+Treating them as `fr3_link0` coordinates rotates every horizontal offset by that
+angle and moves the bulb about **0.4 m**. Nothing looks wrong: the numbers stay
+the right magnitude and land somewhere plausible on the table.
+
+It cost three separate mistakes in one session — a "the bulb starts outside the
+workspace" diagnosis that was false, a workspace re-size and a home-pose
+re-solve made on the strength of it, and a replay video that drew the bulb spun
+around the socket.
+
+```
+                         wrong (as fr3_link0)      correct
+bulb start               [0.346,  0.253, 0.041]    [0.744, -0.162, 0.038]
+```
+
+**Rotate first**, by `conj(base_q) · fixed_socket_quaternion_wxyz`, or avoid the
+question entirely and take positions from forward kinematics on `obs[11:18]`.
+
+**The check that catches it:** the reconstructed grasp point must coincide with
+the FK tool position while the jaws are closed. Before the fix those were ~400
+mm apart; after, 7.9 mm — matching the observation's own residual.
+
+### B18. Screwing is not finished when the bulb first reaches the seat pose
+
+`bulbscrew_mjx`'s success test, `d_seat + 0.1·upright_err`, is **yaw-invariant**
+— deliberately, since a bulb is a body of revolution. So it cannot tell "resting
+in the socket mouth" from "screwed tight", and the real task needs 3–4 turns.
+
+Measured on `kinesthetic_20260830_190008`:
+
+```
+step  734   d_seat 7.2 mm   spin  -96 deg    <- the sim calls this SOLVED
+step 1301   d_seat 1.5 mm   spin -830 deg    <- actually screwed home
+```
+
+At the sim's first "solve" the bulb was 5.6 mm proud with 96° of spin done. It
+then took another **2.0 turns**, descending 2.8 mm per turn. Truncating there
+cuts away most of the screwing and teaches a policy to drop the bulb in the hole
+and stop.
+
+Depth separates them, because the seat is calibrated at the fully-home pose: 5.6
+mm proud when resting, 0.2 mm when tight. `extract_success_trajectories` now
+cuts on `d_seat < 1 mm held for 2 s`; `--sim-criterion` keeps the old behaviour
+for comparison. **`bulbscrew_mjx`'s own `success_threshold` needs the same
+treatment**, or a policy trained against it stops two turns early.
+
 ---
 
 ## C. Quick diagnostic order

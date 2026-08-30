@@ -264,20 +264,29 @@
     # observation's ee_rel_neck: that is measured against the bulb, which moves
     # and is near-constant once grasped, so clamping it would bound nothing.)
     #
-    # PROVISIONAL, 2026-08-28. Generous box chosen only so the arm can be driven
-    # at all, sized to contain the three known task points with margin:
-    #   bulb neck (grasp)  [0.742, -0.161, 0.038]
-    #   socket seat (goal) [0.600,  0.097, 0.020]
-    #   home               [0.671, -0.032, 0.250]
-    # z stays above 0.02 to keep the tool off the work surface; note the grasp
-    # itself is at 0.038, so the lower bound cannot be raised much.
+    # Checked 2026-08-30 against the true tool path of
+    # kinesthetic_20260830_190008, taken by forward kinematics from the joint
+    # encoders (NOT reconstructed from the observation -- see below):
+    #   x [0.592, 0.778]   y [-0.168, 0.113]   z [0.130, 0.294]
+    # entirely inside these bounds, with 74 mm the tightest clearance.
     #
-    # NOT the measured-safe envelope -- step 6 of NEED_TO_CONFIGURE.md is still
-    # owed. Drive to each real edge, read the tool pose, and tighten. Keep the
-    # bounds off the working region: when clamped, executed_action is zeroed
-    # while the operator is still commanding, which is self-consistent but makes
-    # unnatural demonstrations, and on PushT a too-tight bound silently stalled
-    # the policy mid-episode.
+    # WARNING for anyone re-deriving these from a recorded episode: obs[0:3] and
+    # obs[7:10] are expressed in the SEAT frame, which on this rig is rotated
+    # 150.7 deg about z relative to fr3_link0. Treating them as fr3_link0
+    # coordinates rotates every horizontal offset by that angle and moves the
+    # bulb roughly 0.4 m -- enough to look like the bulb sits outside the
+    # workspace when it does not. Use FK from obs[11:18], or rotate by the seat
+    # frame first.
+    #
+    # Task points, all comfortably inside:
+    #   bulb start (screw tip)  [0.744, -0.162, 0.038]   0.7 mm off the plank
+    #   socket seat             [0.599,  0.097, 0.067]
+    #   home                    [0.671, -0.032, 0.250]
+    #
+    # STILL NOT the measured-safe envelope -- step 6 of NEED_TO_CONFIGURE.md is
+    # owed. Generous rather than tight on purpose: a bound that hugs one
+    # demonstration clamps a policy that wanders, and on PushT a too-tight bound
+    # silently stalled the policy mid-episode.
     workspace_x: [0.35, 0.85]
     workspace_y: [-0.35, 0.30]
     workspace_z: [0.02, 0.45]
