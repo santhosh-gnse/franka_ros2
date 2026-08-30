@@ -35,6 +35,12 @@ from std_msgs.msg import Bool, Float32MultiArray
 from .math_utils import compose_pose, quaternion_multiply, quaternion_inverse, \
     quaternion_to_matrix, normalize_quaternion
 
+# /rigid_bodies is Y-up ("map"); the driver's TF frame "optitrack" is Z-up.
+# p_map = Rx(-90 deg) @ p_optitrack. See SIM_ALIGNMENT.md section 0 -- mixing
+# the two silently produces a metre-scale error that looks like a real
+# miscalibration.
+Q_OPTITRACK_TO_MAP = np.array([0.7071068, -0.7071068, 0.0, 0.0])
+
 
 def _stamp_seconds(stamp):
     return stamp.sec + stamp.nanosec * 1e-9
@@ -52,7 +58,6 @@ class ObservationNode(Node):
         defaults = {
             "control_rate_hz": 20.0, "pose_timeout_s": 0.15,
             "bulb_pose_topic": "/bulbscrew/bulb_pose",
-            "pole_base_pose_topic": "/bulbscrew/pole_base_pose",
             "joint_state_topic": "/joint_states",
             "gripper_joint_state_topic": "/fr3_gripper/joint_states",
             "gripper_joint_names": ["fr3_finger_joint1", "fr3_finger_joint2"],
@@ -79,8 +84,20 @@ class ObservationNode(Node):
             # through a marker on the robot's stand (same scheme as PushT).
             "robot_base_frame": "fr3_link0",
             "tcp_frame": "fr3_hand_tcp",
-            "pole_base_to_robot_base_translation": [0.0, 0.0, 0.0],
-            "pole_base_to_robot_base_quaternion_wxyz": [1.0, 0.0, 0.0, 0.0],
+            # Anchor from hand_eye_calibration, taken VERBATIM as that tool
+            # emits it: a tf2 parent->child transform with parent fr3_link0 and
+            # child optitrack, i.e.
+            #     p_fr3_link0 = R(quaternion) @ p_optitrack + translation
+            # so the pair is the pose of the OPTITRACK frame expressed in
+            # fr3_link0. Reading it the other way round moves the socket 75 mm
+            # and looks exactly like a failed calibration.
+            #
+            # This replaces the franka_pole_base marker chain: those markers
+            # cannot be kept visible on this rig, and the anchor does not need
+            # them. The cost is that the transform no longer self-corrects if
+            # the robot stand is moved -- re-run the calibration if it is.
+            "optitrack_to_robot_base_translation": [0.0, 0.0, 0.0],
+            "optitrack_to_robot_base_quaternion_wxyz": [1.0, 0.0, 0.0, 0.0],
             # --- sanity gates on the finished observation ----------------------
             # A tracked pose can be live, fresh and non-zero and still be wrong.
             # In the first kinesthetic demo 41% of frames put the bulb ~1.86 m
@@ -112,8 +129,17 @@ class ObservationNode(Node):
         self.bulb_offset_q = np.array(g("bulb_marker_to_object_quaternion_wxyz").value)
         self.tip_off = float(g("bulb_tip_offset").value)
         self.neck_off = float(g("bulb_neck_offset").value)
-        self.pole_offset_p = np.array(g("pole_base_to_robot_base_translation").value)
-        self.pole_offset_q = np.array(g("pole_base_to_robot_base_quaternion_wxyz").value)
+        # Everything downstream is expressed in the Y-up "map" frame that
+        # /rigid_bodies uses, so fold the anchor into that frame once here:
+        # invert the emitted transform to get fr3_link0 in "optitrack", then
+        # rotate Z-up -> Y-up. Doing it at startup keeps the per-tick path a
+        # single compose and keeps the frame conversion in exactly one place.
+        he_t = np.array(g("optitrack_to_robot_base_translation").value)
+        he_q = normalize_quaternion(np.array(g("optitrack_to_robot_base_quaternion_wxyz").value))
+        q_base_in_optitrack = quaternion_inverse(he_q)
+        p_base_in_optitrack = -(quaternion_to_matrix(q_base_in_optitrack) @ he_t)
+        self.base_p, self.base_q = compose_pose(
+            np.zeros(3), Q_OPTITRACK_TO_MAP, p_base_in_optitrack, q_base_in_optitrack)
         self.robot_base_frame = g("robot_base_frame").value
         self.tcp_frame = g("tcp_frame").value
 
@@ -127,10 +153,8 @@ class ObservationNode(Node):
 
         self.pub = self.create_publisher(Float32MultiArray, g("observation_topic").value, 10)
         self.valid_pub = self.create_publisher(Bool, g("observation_valid_topic").value, 10)
-        for key, parameter in (("bulb", "bulb_pose_topic"),
-                               ("pole_base", "pole_base_pose_topic")):
-            self.create_subscription(PoseStamped, g(parameter).value,
-                                     lambda msg, k=key: self._on_pose(k, msg), 20)
+        self.create_subscription(PoseStamped, g("bulb_pose_topic").value,
+                                 lambda msg: self._on_pose("bulb", msg), 20)
         self.create_subscription(JointState, g("joint_state_topic").value, self._on_joints, 50)
         self.create_subscription(JointState, g("gripper_joint_state_topic").value,
                                  self._on_gripper, 20)
@@ -190,7 +214,7 @@ class ObservationNode(Node):
 
     def _tick(self):
         now = self._now()
-        required = ["bulb", "pole_base"]
+        required = ["bulb"]
         valid = (all(k in self.poses for k in required)
                  and self.joints is not None and self.gripper_width is not None)
         if valid:
@@ -226,10 +250,8 @@ class ObservationNode(Node):
         socket_q = normalize_quaternion(np.array(g("fixed_socket_quaternion_wxyz").value))
         seat = socket_p + quaternion_to_matrix(socket_q) @ np.array(g("socket_seat_offset").value)
 
-        # --- end effector: forward kinematics, anchored via the stand marker ---
-        pole_p, pole_q = _pose(self.poses["pole_base"][0])
-        base_p, base_q = compose_pose(pole_p, pole_q, self.pole_offset_p, self.pole_offset_q)
-        ee_p, _ = compose_pose(base_p, base_q, tcp[0], tcp[1])
+        # --- end effector: forward kinematics, anchored by hand-eye ---
+        ee_p, _ = compose_pose(self.base_p, self.base_q, tcp[0], tcp[1])
 
         # --- express everything in the seat frame, so the layout is Z-up like sim ---
         R_seat_inv = quaternion_to_matrix(socket_q).T

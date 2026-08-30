@@ -2,7 +2,6 @@
   ros__parameters:
     # Output topics of optitrack_bridge_node.
     bulb_pose_topic: /bulbscrew/bulb_pose
-    pole_base_pose_topic: /bulbscrew/pole_base_pose
     joint_state_topic: /joint_states
     # franka_gripper is NOT started by moveit.launch.py -- that include is
     # commented out at line 340 -- so it needs its own terminal:
@@ -176,8 +175,32 @@
     # stand rather than the stand having been moved -- the two look identical in
     # mocap, and only a fresh calibration distinguishes them. The old values
     # reconstructed fr3_link0's origin 62.3 mm away from itself.
-    pole_base_to_robot_base_translation: [-0.074, -0.00924, -0.03365]
-    pole_base_to_robot_base_quaternion_wxyz: [0.01351, -0.01733, -0.70912, -0.70475]
+    # RETIRED 2026-08-30. The franka_pole_base markers cannot be kept visible on
+    # this rig, and they are not needed: hand_eye_calibration gives fr3_link0 ->
+    # optitrack directly. Kept only until observation_node is rewired to the
+    # static anchor below.
+    #
+    # --- hand-eye anchor, measured 2026-08-30, 10 samples ----------------------
+    # Emitted by optitrack_robot_calibration verbatim as a tf2 parent->child
+    # transform, i.e.  p_fr3_link0 = R(quat) * p_optitrack + translation.
+    # NOTE the direction: reading it the other way round moves the socket 75 mm
+    # and looks like a calibration failure.
+    #
+    #   ros2 run tf2_ros static_transform_publisher \
+    #     --frame-id fr3_link0 --child-frame-id optitrack \
+    #     --x 2.56989 --y -1.40344 --z -0.00600 \
+    #     --qx 0.00029 --qy 0.00007 --qz 0.99966 --qw 0.02613
+    #
+    # Sample-to-sample spread over the last 8 solutions: 6 mm x, 12 mm y,
+    # 15 mm z. It reproduces the 2026-08-28 run to 0.3/0.4/1.2 mm, so the anchor
+    # is stable across sessions.
+    #
+    # Independently validated: pushing the franka_pole_base marker through it
+    # lands at [-0.001, -0.034, 0.024] in fr3_link0 -- 4 cm from the robot's own
+    # base origin, which is where a marker plate on the base physically is. That
+    # check does not reuse any part of the calibration.
+    optitrack_to_robot_base_translation: [2.56989, -1.40344, -0.00600]
+    optitrack_to_robot_base_quaternion_wxyz: [0.02613, 0.00029, 0.00007, 0.99966]
 
     # --- workspace ------------------------------------------------------------
     # Bounds on fr3_hand_tcp in fr3_link0 -- a STATIC frame. (Not the
