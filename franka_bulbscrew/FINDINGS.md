@@ -315,33 +315,47 @@ top of a seated 120 mm bulb 120.0 mm above the seat
 => the tool is 25.6 mm above the top of the glass while holding it
 ```
 
-**The error is axial, and that is the diagnosis.** Perpendicular to the bulb's
-own axis the disagreement is 3.2 mm at that moment (10.9 mm median across the
-episode); along the axis it is ~52 mm. A bad mocap-to-robot anchor errs in every
-axis; an error confined to the object's own axis is the object's geometry.
+**Two hypotheses fit this equally well**, and the demonstration cannot separate
+them:
 
-−53 mm also puts Motive's origin at the neck/head junction, where no markers
-are. They are on the glass head, so the centroid must sit far higher — around
-−105 mm, i.e. 15 mm below the top of a 120 mm bulb, which is what the grasp
-geometry implies.
+- **(A) object geometry** — the canonical bulb origin sits ~52 mm too low
+  relative to the marker frame, so the grasp point is computed too low.
+- **(B) mocap-to-robot anchor** — everything mocap-derived sits ~52 mm too low
+  in `fr3_link0`.
 
-Everything downstream inherits it: `bulb_marker_to_object_translation` was
-solved with the wrong constraint, and `fixed_socket_position` was back-solved
-from the bulb frame. Correcting the seat by +52 mm also settles why it measured
-1.5 mm above the plank when the socket sits on a 65 mm stand — the two
-symptoms are one error.
-
-**One measurement fixes it.** Stand the bulb on the plank, untouched, and read
-the mocap bulb origin's height in the robot frame; then
+They separate only when the bulb is *tilted*, and it never is: while gripped the
+tilt is 4.4° median, 17° at p90, and there are **zero** frames past 25°. Inside
+that range "along the bulb axis" and "vertically" are the same direction.
 
 ```
-bulb_tip_offset = 0.018 − z_origin_in_fr3_link0
+tilt < 10 deg   n=283   axial +49.5 mm (sd 7.7)   vertical +49.5 mm (sd 8.1)
+tilt 10-25 deg  n= 53   axial +52.1 mm (sd 6.8)   vertical +48.0 mm (sd 4.8)
+tilt > 25 deg   n=  0
 ```
 
-Re-derive `bulb_marker_to_object_translation` and `fixed_socket_position` from
-it. `observation_node` now warns whenever the jaws are closed and the tool is
-more than 30 mm from the grasp point, which is the check that would have caught
-this on the first episode.
+Do not read a whole-episode variance comparison as evidence either — it is
+dominated by frames where the bulb reads upside down, which are themselves bad.
+
+Circumstantial support for (A): −53 mm puts Motive's origin at the neck/head
+junction, where no markers are; they are on the glass head, so the centroid
+should sit far higher. Support for (B): the seat measures 1.5 mm above the plank
+while the socket sits on a 65 mm stand. But the seat was *back-solved from the
+bulb frame*, so that symptom is explained by either.
+
+**The measurement that separates them takes a minute and involves no mocap.**
+Jog the TCP down until it touches the plank and read its height from FK:
+
+```bash
+ros2 run tf2_ros tf2_echo fr3_link0 fr3_hand_tcp
+```
+
+- plank at ≈ 0.018 m → the anchor is sound, and the bulb frame is wrong (A)
+- plank at ≈ 0.070 m → the anchor is off by ~52 mm (B)
+
+Then re-derive whichever is at fault, plus `fixed_socket_position`, which
+inherits from the bulb frame either way. `observation_node` now warns whenever
+the jaws are closed and the tool is more than 30 mm from the grasp point — the
+check that would have caught this on the first episode.
 
 **The general rule:** a constant that comes from the sim is a hypothesis about
 the real object, not a measurement. Mark it as such, and never let it be an
