@@ -82,33 +82,83 @@ There are **two separate modes**. They use different launch files and must not
 be run together -- the teleop stack commands the arm, and nothing may command it
 while it is being moved by hand.
 
-Common to both, in this order:
+### Bring-up, one terminal each, in this order
+
+**Terminal 1 — OptiTrack.**
 
 ```bash
-# 1. OptiTrack  (a fresh relaunch always comes up inactive; activating is required)
 ros2 launch mocap4r2_optitrack_driver optitrack2.launch.py
 ros2 lifecycle set /mocap4r2_optitrack_driver_node activate
+```
 
-# 2. Arm.  BOTH arguments are needed: ee_id defaults to 'none', so load_gripper
-#    alone silently loads no end effector and the frames stop at fr3_link8.
-#    Desk must be in Execution mode with FCI active, and the Franka Hand
-#    enabled as the end effector.
+> **The single most common cause of "nothing works".** The driver comes up
+> `inactive` on every launch, and it also **drops back to `inactive` on its own**
+> -- twice in one hour on 2026-08-30, with no error anywhere. While inactive,
+> `/bulbscrew/bulb_pose` is silent, `observation_valid` is false, and the
+> recorder **silently refuses to start an episode**. The gripper buttons keep
+> working, so it looks exactly like a dead gamepad.
+>
+> Check it before every session, and again if a Circle press seems ignored:
+>
+> ```bash
+> ros2 lifecycle get /mocap4r2_optitrack_driver_node    # want: active [3]
+> ```
+>
+> Re-activating is safe at any time. Allow **~5 s** afterwards before starting an
+> episode -- the recorder needs the observation to settle, and a start attempted
+> immediately still fails.
+>
+> A full **process restart** (not just deactivate/activate) is required after any
+> edit to Motive's asset list. A lifecycle cycle does not re-read it, and the
+> driver then pairs names to poses by index -- so every rigid body silently
+> carries the wrong name. See FINDINGS.
+
+**Terminal 2 — arm.** Desk in Execution mode, FCI active, Franka Hand enabled as
+the end effector, user stop released.
+
+```bash
 ros2 launch franka_fr3_moveit_config moveit.launch.py \
   robot_ip:=10.90.90.177 use_fake_hardware:=false \
   load_gripper:=true ee_id:=franka_hand
+```
 
-# 3. Gripper, own terminal.  moveit.launch.py builds this include but never adds
-#    it (commented out at line 340), and 'namespace' has no default.
+Both arguments are needed: `ee_id` defaults to `none`, so `load_gripper` alone
+silently loads no end effector and the frames stop at `fr3_link8`.
+
+**Terminal 3 — gripper.** `moveit.launch.py` builds this include but never adds
+it (commented out at line 340), and `namespace` has no default.
+
+```bash
 ros2 launch franka_gripper gripper.launch.py robot_ip:=10.90.90.177 namespace:=fr3
 ```
+
+### Check before collecting
+
+```bash
+ros2 lifecycle get /mocap4r2_optitrack_driver_node   # active [3]
+ros2 control list_controllers                        # all active
+ros2 topic echo /bulbscrew/observation_valid --once   # data: true
+```
+
+If `observation_valid` is false with everything else healthy, it is almost
+always the OptiTrack driver.
 
 ### Mode A — kinesthetic teaching (recommended for demonstrations)
 
 Guide the arm by hand. Preferred for this task: it is contact-rich, and your
 hands feel the threads engage in a way a gamepad cannot.
 
+**Terminal 4 — collection stack:**
+
 ```bash
 ros2 launch franka_bulbscrew bulbscrew_kinesthetic.launch.py
+```
+
+**Terminal 5 — hand guiding.** Let terminal 4 settle first; switching
+controllers while something else is starting up has tripped
+`communication_constraints_violation` and dropped the whole stack.
+
+```bash
 ros2 run franka_bulbscrew guiding_mode --ros-args -p enable:=true
 ```
 
@@ -117,15 +167,20 @@ time.** Gamepad, since both hands are on the robot:
 
 | button | action |
 | --- | --- |
-| PS (10) | home the arm, then hand it back to guiding |
 | Circle (1) | start episode |
 | Square (3) | stop episode and save |
 | Cross / X (0) | close gripper |
 | Triangle (2) | open gripper |
+| PS (10) | home the arm, then hand it back to guiding |
 
-Per episode: **PS** -> place the bulb -> **Circle** -> guide the task -> **Square**
-as soon as the bulb is seated. Homing is refused while recording, since that
-motion would be captured as part of the demonstration.
+Per episode: **PS** -> place the bulb -> **Circle** -> guide the task ->
+**Square**. Homing is refused while recording, since that motion would be
+captured as part of the demonstration.
+
+**Keep turning until the bulb stops going down.** It takes 2-4 full turns after
+it first reaches the seat pose -- roughly 2.8 mm of descent per turn. Stopping
+at the moment it looks seated cuts the demonstration two turns early; see
+FINDINGS B18.
 
 Return to normal control before teleop or anything that commands the arm:
 
@@ -135,6 +190,51 @@ ros2 run franka_bulbscrew guiding_mode --ros-args -p enable:=false
 
 Episodes land in `~/bulbscrew_data/kinesthetic_<timestamp>/`. Actions are
 *derived* from the motion produced -- see `kinesthetic_recorder_node`.
+
+### If a button seems ignored
+
+The recorder declines to start when the observation is invalid, and that refusal
+currently goes only into the service response -- nothing surfaces it. Probe it
+directly:
+
+```bash
+ros2 service call /bulbscrew/start_episode std_srvs/srv/Trigger
+```
+
+- `observation unavailable or invalid` -> the OptiTrack driver, almost always
+- `episode already active` -> it *is* recording; press Square
+- `success=True` -> recording started from this call
+
+Note a session directory and its `metadata.json` are written when the recorder
+starts, so an empty session directory does **not** mean an episode was lost --
+it means none ever started.
+
+### Recovering without restarting
+
+If the controllers go inactive (Desk mode change, user stop, a reflex), the
+hardware component drops to `unconfigured` and cannot be activated directly:
+
+```bash
+ros2 control set_hardware_component_state FrankaHardwareInterface active
+ros2 control set_controller_state joint_state_broadcaster inactive   # configure
+ros2 control set_controller_state joint_state_broadcaster active
+ros2 control set_controller_state fr3_arm_controller active
+ros2 control set_controller_state franka_robot_state_broadcaster active
+ros2 lifecycle set /mocap4r2_optitrack_driver_node activate
+```
+
+The `inactive` step is not a typo -- an `unconfigured` controller cannot go
+straight to `active`, and the error message does not say so.
+
+**Then verify the joint states are real.** A fallback `joint_state_publisher`
+serves URDF defaults on the same topic, so forward kinematics returns a
+plausible, completely wrong pose:
+
+```bash
+ros2 topic echo /joint_states --once    # twice; the values must differ slightly
+```
+
+Byte-identical readings mean frozen data, not a stationary arm.
 
 ### Mode B — gamepad teleoperation
 
@@ -184,9 +284,20 @@ To keep only the demonstrations that solved the task, truncated at success:
 ros2 run franka_bulbscrew extract_success_trajectories
 ```
 
-This applies the sim's own criterion — `d_seat + 0.1·upright_err < 0.02` — and
-truncates at the first step meeting it, so a trajectory ends exactly where a sim
-episode would. Originals are never modified.
+It scans both `session_*` (teleop) and `kinesthetic_*` directories, keeps the
+episodes that reached **`d_seat < 3 mm held for 1 s`**, and truncates at that
+point. Originals are never modified.
+
+That criterion is deliberately **not** the sim's own
+`d_seat + 0.1·upright_err < 0.02`. The sim's test is yaw-invariant — a bulb
+being a body of revolution — so it cannot tell "resting in the socket mouth"
+from "screwed tight", and fires roughly two turns early. `--sim-criterion`
+reproduces the old behaviour for comparison; `--depth` and `--hold-s` adjust the
+new one.
+
+Episodes with more than 1% implausible bulb frames are skipped: mocap tracking
+some other object produces data that looks structurally perfect. Override with
+`--allow-mocap-dropouts` only if you know why.
 
 ## Reused from `franka_pusht`
 

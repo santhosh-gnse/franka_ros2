@@ -56,8 +56,24 @@ SIM_THRESHOLD = 0.02
 # Depth is what distinguishes them, because the seat was calibrated with the
 # bulb screwed fully home: 5.6 mm proud when merely resting, 0.2 mm when tight.
 # The hold requirement rejects the moment it passes through on the way down.
-DEFAULT_DEPTH = 0.001          # m, distance from the seat
-DEFAULT_HOLD_S = 2.0           # s it must stay there
+# Deliberately forgiving. What it has to separate is "resting in the socket
+# mouth" (measured 5.6 mm proud) from "screwed down", not "perfect" from
+# "nearly". A demonstration that stops a fraction of a turn early is still a
+# good demonstration; one that stops two turns early is not.
+#
+# Checked against the three episodes recorded so far: at 3 mm held 1 s all are
+# accepted and the cut lands at 71-83% of each, i.e. it keeps the screwing and
+# trims only the tail. Tightening to 1 mm rejects a whole episode; loosening to
+# 5 mm cuts at 41-59%, back inside the screwing.
+DEFAULT_DEPTH = 0.003          # m, distance from the seat
+DEFAULT_HOLD_S = 1.0           # s it must stay there -- rejects passing through
+
+# An episode with implausible bulb frames is not usable regardless of where it
+# ends (FINDINGS B15): the first demonstration had 41% of its frames tracking
+# some other object, and the old extractor accepted it because the one frame it
+# truncated at happened to be good.
+MAX_BULB_DISTANCE = 0.6        # m from the seat
+MAX_BAD_FRACTION = 0.01        # reject above 1% implausible frames
 # Sessions recorded before the frame fixes landed; see the module docstring.
 PRE_FIX_SESSION_PREFIXES = ()   # no known-bad sessions for this task yet
 
@@ -76,7 +92,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--root", default="~/bulbscrew_data",
-                        help="dataset root holding session_* directories")
+                        help="dataset root holding session_* / kinesthetic_* directories")
     parser.add_argument("--out", default="success_trajectories",
                         help="output directory, relative to --root unless absolute")
     parser.add_argument("--depth", type=float, default=DEFAULT_DEPTH,
@@ -84,6 +100,8 @@ def main(argv=None):
     parser.add_argument("--hold-s", type=float, default=DEFAULT_HOLD_S,
                         help="how long it must stay within --depth to count")
     parser.add_argument("--rate-hz", type=float, default=20.0)
+    parser.add_argument("--allow-mocap-dropouts", action="store_true",
+                        help="keep episodes with implausible bulb frames (see FINDINGS B15)")
     parser.add_argument("--sim-criterion", action="store_true",
                         help="truncate on bulbscrew_mjx's d_seat + 0.1*upright_err instead. "
                              "Cuts mid-screw on real demonstrations; for comparison only.")
@@ -103,7 +121,13 @@ def main(argv=None):
     for stale in glob.glob(os.path.join(out, "*.npz")):
         os.remove(stale)
 
-    sessions = sorted(d for d in glob.glob(os.path.join(root, "session_*")) if os.path.isdir(d))
+    # Both prefixes: ps5_teleop writes session_*, kinesthetic_recorder_node
+    # writes kinesthetic_*. Globbing only session_* silently reported "0 solved"
+    # for every hand-guided episode ever recorded.
+    sessions = sorted(d for pattern in ("session_*", "kinesthetic_*")
+                      for d in glob.glob(os.path.join(root, pattern)) if os.path.isdir(d))
+    if not sessions:
+        raise SystemExit(f"no session_* or kinesthetic_* directories under {root}")
     header = f"{'episode':<44} {'steps':>6} {'best err':>9} {'solved':>8} {'kept':>6}"
     print(header)
     print("-" * len(header))
@@ -121,6 +145,12 @@ def main(argv=None):
                 skipped += 1
                 print(f"{label:<44} {len(next_states):>6} {task_err.min():>9.4f} "
                       f"{'-':>8} {'skip':>6}   pre-fix frames")
+                continue
+            bad = (d_seat > MAX_BULB_DISTANCE).mean()
+            if bad > MAX_BAD_FRACTION and not args.allow_mocap_dropouts:
+                skipped += 1
+                print(f"{label:<44} {len(next_states):>6} {task_err.min():>9.4f} "
+                      f"{'-':>8} {'skip':>6}   {100*bad:.0f}% implausible bulb frames")
                 continue
             if args.sim_criterion:
                 hit = np.flatnonzero(task_err < args.threshold)
