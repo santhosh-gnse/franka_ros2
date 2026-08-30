@@ -111,6 +111,8 @@ checks accept it happily, and the observation is built from a bogus pose while
 `"<body> is not visible to OptiTrack"`. **The same latent bug existed in
 `franka_pusht`** and was fixed there too.
 
+That guard is necessary and not sufficient — see B15.
+
 ### B2. Two Y-up frames and one Z-up frame
 
 | frame | up axis |
@@ -239,9 +241,14 @@ through the normal stack.
 
 ### B13. Demonstrations that continue past success
 
-The first demo solved at step 467 of 1667 — then carried on and ended
-*un-solved*, 5 cm from the seat. 72% of it was post-success. Left in, that
+The first demo solved at step 1370 of 1667 — then carried on and ended
+*un-solved*, 12.9 cm from the seat. 18% of it was post-success. Left in, that
 teaches a policy to keep fiddling with a bulb that is already seated.
+
+Measure `task_err` exactly as `bulbscrew_mjx` does — `d_seat + 0.1·orn` with
+`orn = 2·arccos(|q_w|)` — not with a substitute uprightness measure. A
+plausible-looking alternative (`1 − z_axis·ẑ`) put the first solve at step 467
+here, off by 903 steps, and turned 18% post-success into 72%.
 
 Stop recording the moment the task is done;
 `extract_success_trajectories` also truncates at the first step meeting the
@@ -252,6 +259,37 @@ sim's own criterion.
 That demo ran **83 s (1667 steps)** against `bulbscrew_mjx`'s 400-step (20 s)
 horizon. A sim episode would be truncated before a comparable trajectory could
 finish, so the policy would never see the task completed.
+
+### B15. Mocap can track the *wrong object* and call it your rigid body
+
+Worse than B1, because the guard there does not catch it. In the first
+kinesthetic demo, **683 of 1667 frames (41%)** put the bulb about **1.86 m**
+from the socket seat — behind the robot, impossible on a 0.6 m reach.
+
+It is not the all-zero placeholder: an unseen body would read 2.48 m here (the
+origin-to-seat distance), and these readings jitter at the centimetre scale.
+Motive was **live-tracking something real** and matching it to the `bulb-trirl`
+marker set. Back-projected into the `map` frame the phantom sits near
+`[0.18, 0.09, 1.44]` — about 1.86 m along `map` +x from the seat, roughly 9 cm
+off the floor.
+
+The 11 dropout segments cluster around grasping and carrying — exactly when the
+gripper and the operator's hands occlude the markers. The longest is 12.1 s.
+
+What makes it expensive: `observation_valid` stayed `true` throughout, and
+`extract_success_trajectories` still accepts the episode, because the frame it
+truncates at happens to be a good one. 41% wrong observations would have entered
+the dataset looking fine.
+
+**Check every episode before trusting it:**
+
+```python
+d_seat = np.linalg.norm(np.load(ep)["states"][:, 0:3], axis=1)
+print((d_seat > 0.6).mean())     # must be 0.0
+```
+
+And gate it at source, next to the B1 check — reject a bulb pose farther than
+~0.6 m from the seat rather than recording it.
 
 ---
 
@@ -268,3 +306,6 @@ When nothing moves, in this order:
 
 Each step isolates one layer. `observation_valid` false with everything else
 healthy is almost always A4 or B1.
+
+And after every recording session, before the data is used at all, run the B15
+plausibility check over each episode.
