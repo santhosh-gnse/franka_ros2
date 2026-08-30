@@ -122,6 +122,23 @@
     # screw end hanging inside -- that fixes the start height and hence where
     # the gripper must reach for the neck. The sim's holder is a 24 mm square
     # only 30 mm tall and needs remodelling; see SIM_ALIGNMENT.md.
+    # !! WRONG BY ABOUT 52 mm -- DO NOT COLLECT DATA AGAINST THIS. !!
+    # This value came from bulbscrew_mjx, not from the real bulb, and the
+    # calibration below cannot detect that because it used this same number as
+    # an input (see FINDINGS B16). Replaying the demonstration in the sim shows
+    # the bulb hanging ~52 mm below the fingers that are demonstrably gripping
+    # it; the disagreement is 3 mm perpendicular to the bulb axis and ~52 mm
+    # along it, which is the signature of the object's own geometry rather than
+    # of the mocap-to-robot anchor.
+    #
+    # -53 mm also places Motive's origin at the neck, where no markers are. They
+    # sit on the glass head, so the true value is around -0.105.
+    #
+    # To fix: stand the bulb on the plank, untouched, read the mocap bulb
+    # origin's z in fr3_link0, and set
+    #     bulb_tip_offset = 0.018 - z_origin
+    # then re-derive bulb_marker_to_object_translation and
+    # fixed_socket_position, both of which inherit this error.
     bulb_tip_offset: -0.053
     # GRASP POINT along the canonical bulb axis. bulbscrew_mjx calls this the
     # "neck" and puts it at -0.006, a 24 mm capsule just above the screw base.

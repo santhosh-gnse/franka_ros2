@@ -291,6 +291,62 @@ print((d_seat > 0.6).mean())     # must be 0.0
 And gate it at source, next to the B1 check — reject a bulb pose farther than
 ~0.6 m from the seat rather than recording it.
 
+### B16. A sim constant copied into the real config, then "validated" against itself
+
+`bulb_tip_offset` (canonical bulb origin → screw tip) was taken as **−0.053 m**
+straight from `bulbscrew_mjx`. It was never measured on the real bulb, and the
+calibration that followed could not catch it: solving
+`bulb_marker_to_object_translation` used the constraint *"the tip sits on the
+18 mm plank"* — with that same −53 mm as an input. The check then confirmed the
+tip sits at 18.0 mm. It always would have. This is B3's trap wearing different
+clothes.
+
+What exposed it was replaying the demonstration in the sim, which puts the arm
+(from joint encoders) and the bulb (from mocap) in one picture. The bulb hangs
+below the fingers, never between them. Quantified at the moment the bulb is
+verifiably screwed home and the jaws are closed on it at 58 mm:
+
+```
+TCP from joint encoders   [0.6014, 0.0999, 0.1651]   fr3_link0
+socket seat from mocap    [0.5996, 0.0970, 0.0195]
+lateral disagreement       1.8 mm, 2.9 mm            <- fine
+TCP height above the seat  145.6 mm
+top of a seated 120 mm bulb 120.0 mm above the seat
+=> the tool is 25.6 mm above the top of the glass while holding it
+```
+
+**The error is axial, and that is the diagnosis.** Perpendicular to the bulb's
+own axis the disagreement is 3.2 mm at that moment (10.9 mm median across the
+episode); along the axis it is ~52 mm. A bad mocap-to-robot anchor errs in every
+axis; an error confined to the object's own axis is the object's geometry.
+
+−53 mm also puts Motive's origin at the neck/head junction, where no markers
+are. They are on the glass head, so the centroid must sit far higher — around
+−105 mm, i.e. 15 mm below the top of a 120 mm bulb, which is what the grasp
+geometry implies.
+
+Everything downstream inherits it: `bulb_marker_to_object_translation` was
+solved with the wrong constraint, and `fixed_socket_position` was back-solved
+from the bulb frame. Correcting the seat by +52 mm also settles why it measured
+1.5 mm above the plank when the socket sits on a 65 mm stand — the two
+symptoms are one error.
+
+**One measurement fixes it.** Stand the bulb on the plank, untouched, and read
+the mocap bulb origin's height in the robot frame; then
+
+```
+bulb_tip_offset = 0.018 − z_origin_in_fr3_link0
+```
+
+Re-derive `bulb_marker_to_object_translation` and `fixed_socket_position` from
+it. `observation_node` now warns whenever the jaws are closed and the tool is
+more than 30 mm from the grasp point, which is the check that would have caught
+this on the first episode.
+
+**The general rule:** a constant that comes from the sim is a hypothesis about
+the real object, not a measurement. Mark it as such, and never let it be an
+input to the calibration that is supposed to verify it.
+
 ---
 
 ## C. Quick diagnostic order

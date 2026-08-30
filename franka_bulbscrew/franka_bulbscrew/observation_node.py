@@ -81,6 +81,24 @@ class ObservationNode(Node):
             "tcp_frame": "fr3_hand_tcp",
             "pole_base_to_robot_base_translation": [0.0, 0.0, 0.0],
             "pole_base_to_robot_base_quaternion_wxyz": [1.0, 0.0, 0.0, 0.0],
+            # --- sanity gates on the finished observation ----------------------
+            # A tracked pose can be live, fresh and non-zero and still be wrong.
+            # In the first kinesthetic demo 41% of frames put the bulb ~1.86 m
+            # from the seat -- behind the robot -- because Motive matched the
+            # bulb's marker set to some other object in the volume. The zero-pose
+            # check above cannot catch that: the readings jitter like a real
+            # measurement. Reject anything outside the robot's reach instead of
+            # recording nonsense.
+            "max_bulb_distance_from_seat": 0.6,
+            # With the jaws closed on the bulb, the tool must be AT the grasp
+            # point. If it is not, the bulb's axial geometry or the mocap-to-
+            # robot anchor is wrong, and every ee_rel_neck in the dataset is
+            # off by that amount -- which is exactly what happened (see
+            # FINDINGS B16). Warn rather than reject: the observation is still
+            # internally consistent, and refusing to run would block the very
+            # session needed to re-measure.
+            "grasp_closed_width": 0.065,
+            "grasp_consistency_warn": 0.03,
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
@@ -219,6 +237,23 @@ class ObservationNode(Node):
         ee_rel_neck = R_seat_inv @ (ee_p - neck)
         bulb_quat_rel_seat = normalize_quaternion(
             quaternion_multiply(quaternion_inverse(socket_q), bulb_q))
+
+        reach = float(g("max_bulb_distance_from_seat").value)
+        if np.linalg.norm(tip_rel_seat) > reach:
+            self.get_logger().error(
+                f"bulb pose implausible: {np.linalg.norm(tip_rel_seat):.2f} m from the seat "
+                f"(limit {reach} m) -- OptiTrack is tracking something that is not the bulb",
+                throttle_duration_sec=2.0)
+            raise ValueError("implausible bulb pose")
+
+        if self.gripper_width < float(g("grasp_closed_width").value):
+            miss = float(np.linalg.norm(ee_rel_neck))
+            if miss > float(g("grasp_consistency_warn").value):
+                self.get_logger().warning(
+                    f"jaws closed on the bulb but the tool is {1000*miss:.0f} mm from the grasp "
+                    f"point (axial {1000*float(ee_rel_neck @ (R_seat_inv @ axis_z)):+.0f} mm) -- check "
+                    "bulb_tip_offset and the base anchor before trusting this data",
+                    throttle_duration_sec=5.0)
 
         q = [self.joints[n][0] for n in self.joint_names]
         dq = [self.joints[n][1] for n in self.joint_names]
