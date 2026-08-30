@@ -62,8 +62,24 @@
     #
     # Note any error in bulb_tip_offset cancels here for the seated pose, since
     # the same offset defines both the tip and this seat.
-    fixed_socket_position: [2.044912, 0.005265, 1.397291]
-    fixed_socket_quaternion_wxyz: [0.707852, -0.705547, -0.026774, -0.020802]
+    # RE-DERIVED 2026-08-30 through the re-measured 5-marker bulb frame, with
+    # the bulb screwed fully home (482 mocap samples, 0.01-0.11 mm jitter). The
+    # seat IS the screw tip in that configuration.
+    #
+    # Seat in fr3_link0: [0.5993, 0.0972, 0.0672] -- 28.3 mm above the measured
+    # plank top (0.0389), which is where a socket standing on the plank belongs.
+    # The seat frame's z is 0.64 deg from vertical, so the observation's vertical
+    # component lands in index 2 as bulbscrew_mjx expects.
+    #
+    # Cross-check that did not feed the solve: the grasp arithmetic in
+    # episode_0000 predicted z ~ 0.0711 from forward kinematics alone. Measured
+    # 0.0672 -- 3.9 mm apart, from two chains sharing nothing.
+    #
+    # The superseded value was [2.044912, 0.005265, 1.397291], which put the
+    # seat at z = 0.0195, i.e. 19 mm BELOW the plank the socket stands on. The
+    # lateral terms were right all along; the whole error was vertical.
+    fixed_socket_position: [2.046294, 0.054203, 1.395794]
+    fixed_socket_quaternion_wxyz: [0.684591, -0.692390, -0.162113, -0.160157]
     socket_seat_offset: [0.0, 0.0, 0.018]
 
     # --- bulb (tracked as "bulb-trirl") ---------------------------------------
@@ -101,7 +117,29 @@
     # the axis or the offset were wrong -- and note it does NOT depend on the
     # socket, so it cannot be fooled the way "place it at the goal and see if
     # the relative pose is small" can.
-    bulb_marker_to_object_translation: [0.00223, -0.05689, -0.00088]
+    # RE-MEASURED 2026-08-30 for the 5-marker set (the earlier 3-marker
+    # calibration is void: adding markers reassigns Motive's origin and axes).
+    #
+    # Method, replacing the one that produced the bad numbers: the bulb was
+    # stood on the plank and spun through 675 deg while /rigid_bodies was
+    # recorded (3841 samples, 31.8 s).
+    #   * the AXIS location comes from the circle the marker origin sweeps --
+    #     radius only 8.4 mm, fit residual rms 2.2 mm, so the two lateral terms
+    #     are good to about +-3 mm and no better;
+    #   * the AXIAL term comes from the plank top at z = 0.0389 in fr3_link0,
+    #     touched directly with the closed gripper. That is a robot measurement
+    #     with no mocap in it, and it is what the old calibration got wrong: it
+    #     ASSUMED an 18 mm plank, 20.9 mm out.
+    # Tip consistency across the sweep: 5.4 / 0.4 / 5.9 mm (x / axial / z).
+    #
+    # Do NOT re-derive this by imposing the tip offset. The obvious
+    # fixed-contact-point solve is degenerate here -- the marker origin already
+    # sits on the spin axis, so every point along the axis is stationary and the
+    # least-squares places the contact arbitrarily (it returned -172 mm, i.e.
+    # below the floor, on this very dataset).
+    #
+    # The marker origin sits 70.1 mm above the screw tip.
+    bulb_marker_to_object_translation: [-0.00271, -0.01699, -0.0017]
     bulb_marker_to_object_quaternion_wxyz: [0.707107, -0.707107, 0.0, 0.0]
     # Along the canonical bulb body's z axis, from bulbscrew_mjx.
     #
@@ -150,7 +188,26 @@
     # describe where the gripper actually goes, or those dims describe a grasp
     # that never happens. bulbscrew_mjx's NECK_OFF must be changed to match --
     # see SIM_ALIGNMENT.md.
-    bulb_neck_offset: 0.041
+    # MEASURED 2026-08-30, not inferred. The operator gripped the bulb exactly
+    # as the task requires -- by the glass body, screwed home in the socket --
+    # and the TCP was read against the calibrated bulb frame:
+    #
+    #   gripper width            58.0 mm   (the 60 mm head, as intended)
+    #   TCP along the bulb axis  +36.7 mm  <- this value
+    #   TCP off the axis           2.2 mm  <- the grasp is well centred
+    #
+    # That 2.2 mm also independently corroborates the bulb frame's lateral
+    # terms, which the circle fit could only pin to about +-3 mm.
+    #
+    # The previous +41.0 mm was an inference from "the jaws close at 59.7 mm so
+    # the TCP must be at the head centre". It was only 4.3 mm out, so it was
+    # never the cause of the 52 mm discrepancy -- that was the bulb frame.
+    #
+    # bulbscrew_mjx's NECK_OFF is -0.006, a 24 mm capsule just above the screw
+    # base. The real grasp is 43 mm higher up, on the glass. The sim must be
+    # changed to match, or observation dims 7:10 describe a grasp that never
+    # happens -- see SIM_ALIGNMENT.md.
+    bulb_neck_offset: 0.0367
 
     # --- robot base anchor ----------------------------------------------------
     # Fixed offset from the franka_pole_base marker's Motive frame to fr3_link0.
