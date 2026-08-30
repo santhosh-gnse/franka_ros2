@@ -13,6 +13,9 @@ libfranka
 franka_description
 
 #Third party packages
+# cloned per their own READMEs, each carries its own .git
+optitrack_bridge/
+optitrack_robot_calibration/
 gz_ros2_control/
 ros2_control/
 olvx_descriptions_module
@@ -22,3 +25,6 @@ serial
 activity.log
 task.md
 test-status.md
+
+# Large binary artefacts -- policies and hand-off archives belong outside git
+*.zip
