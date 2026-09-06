@@ -16,10 +16,19 @@ observation did not mean what the sim thought it meant.
 
 ## Status
 
-**Scaffolded, not yet calibrated.** Every transform in `bulbscrew_robot.yaml` is
-a placeholder, `calibration_configured` and `workspace_configured` are both
-`false`, and `safety_node` outputs zero while they are. The pipeline runs
-end-to-end but will not move the robot until the checklist is done.
+**Calibrated and collecting** (2026-09-06). The full chain -- hand-eye anchor,
+plank, bulb frame, socket seat -- has been re-measured after the robot base, the
+socket and the bulb's markers all moved, and the seat height reproduces the
+independent 2026-08-30 figure to 1.5 mm.
+
+The task **starts with the bulb already held**: an episode is carry -> align ->
+screw, with no reach-and-grasp phase.
+
+Two things are still owed, neither blocking. `bulbscrew_mjx` has not been
+updated to the measured rig (`SIM_ALIGNMENT.md` §3b lists every change), and
+`max_yaw_rate` is set from the configured value rather than a measured one --
+yaw saturates on 10-16% of steps, so it may be labelling turns slower than they
+were performed.
 
 ## Interfaces
 
@@ -132,13 +141,42 @@ it (commented out at line 340), and `namespace` has no default.
 ros2 launch franka_gripper gripper.launch.py robot_ip:=10.90.90.177 namespace:=fr3
 ```
 
+**After ANY robot power cycle, home the gripper once:**
+
+```bash
+ros2 action send_goal /fr3/franka_gripper/homing franka_msgs/action/Homing "{}"
+```
+
+> An un-homed Franka Hand **accepts goals and reports `succeeded`** -- in about
+> 0.25 s, far too fast for real travel -- while the fingers do not move and the
+> width reads a constant 0.0 mm. Every layer above it looks healthy, so it
+> presents as a dead gamepad. Diagnose with
+> `ros2 topic echo /fr3/franka_gripper/joint_states --once`: a width pinned at
+> 0.0 while commands are flowing means it needs homing.
+
 ### Check before collecting
 
 ```bash
 ros2 lifecycle get /mocap4r2_optitrack_driver_node   # active [3]
 ros2 control list_controllers                        # all active
 ros2 topic echo /bulbscrew/observation_valid --once   # data: true
+ros2 node list | grep -c bulbscrew                   # 5, not 10
+ros2 topic info /joy                                 # Publisher count: 1
 ```
+
+The last two catch a duplicate launch. Two recorders fight over the controller
+switch and two `joy_node`s scramble button edge detection -- which looks exactly
+like a broken gamepad.
+
+> **If `ros2` commands report an empty world, suspect the daemon before the
+> stack.** It caches the graph, and after many processes die -- or after DDS
+> shared memory is cleared -- it reports that nothing exists while everything is
+> running fine.
+>
+> ```bash
+> ros2 node list --no-daemon      # if THIS shows nodes, it is the daemon
+> ros2 daemon stop && ros2 daemon start
+> ```
 
 If `observation_valid` is false with everything else healthy, it is almost
 always the OptiTrack driver.
@@ -173,14 +211,32 @@ time.** Gamepad, since both hands are on the robot:
 | Triangle (2) | open gripper |
 | PS (10) | home the arm, then hand it back to guiding |
 
-Per episode: **PS** -> place the bulb -> **Circle** -> guide the task ->
-**Square**. Homing is refused while recording, since that motion would be
-captured as part of the demonstration.
+Per episode, **the task now starts with the bulb already held**:
 
-**Keep turning until the bulb stops going down.** It takes 2-4 full turns after
-it first reaches the seat pose -- roughly 2.8 mm of descent per turn. Stopping
-at the moment it looks seated cuts the demonstration two turns early; see
-FINDINGS B18.
+1. **PS** — home. The jaws open automatically, before the arm moves
+2. place the bulb in the jaws
+3. **X** — close on it
+4. **Circle** — start recording
+5. carry, align, screw
+6. **Square** — stop and save
+
+Homing is refused while recording, since that motion would be captured as part
+of the demonstration. Home before the bulb is in hand, never after — the arm
+moves through a trajectory and nothing holds the bulb during it.
+
+The home pose puts the tool where the bulb used to be picked up, lifted clear:
+the screw tip hangs 71 mm above the plank and the socket is 0.325 m away, so an
+episode is carry -> align -> slot, with no approach phase.
+
+**The task is SLOTTING, not screwing** (changed 2026-09-06): drop the bulb into
+the socket mouth and leave it there. No turns are needed, and any final rotation
+counts. The bulb will rest at a lean -- 6 to 16 deg across two measured attempts
+-- which is expected: only screwing pulls it perpendicular, so uprightness is
+not a success condition.
+
+Success is position alone: `d_seat < 20 mm`, held 1 s. The goal frame remains
+the fully-screwed pose, which is repeatable to 0.02 mm, so a slotted bulb reads
+as roughly 10-12 mm from it.
 
 Return to normal control before teleop or anything that commands the arm:
 
