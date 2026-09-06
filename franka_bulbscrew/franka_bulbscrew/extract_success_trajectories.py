@@ -56,16 +56,23 @@ SIM_THRESHOLD = 0.02
 # Depth is what distinguishes them, because the seat was calibrated with the
 # bulb screwed fully home: 5.6 mm proud when merely resting, 0.2 mm when tight.
 # The hold requirement rejects the moment it passes through on the way down.
-# Deliberately forgiving. What it has to separate is "resting in the socket
-# mouth" (measured 5.6 mm proud) from "screwed down", not "perfect" from
-# "nearly". A demonstration that stops a fraction of a turn early is still a
-# good demonstration; one that stops two turns early is not.
+# The task is SLOTTING, not screwing: the bulb is dropped into the socket mouth
+# and left there. Two consequences for the criterion.
 #
-# Checked against the three episodes recorded so far: at 3 mm held 1 s all are
-# accepted and the cut lands at 71-83% of each, i.e. it keeps the screwing and
-# trims only the tail. Tightening to 1 mm rejects a whole episode; loosening to
-# 5 mm cuts at 41-59%, back inside the screwing.
-DEFAULT_DEPTH = 0.003          # m, distance from the seat
+# It must be yaw-invariant -- any rotation counts, since nothing is threaded --
+# and it must NOT test uprightness. A slotted bulb rests against the socket rim
+# at whatever angle it settles: measured 6.1 deg and 16.1 deg on two consecutive
+# attempts. Only screwing pulls it perpendicular. An upright term would reject
+# a perfectly good slot.
+#
+# Position, by contrast, IS repeatable: the tip landed within 2.7 mm across those
+# attempts, 9.7-12.2 mm above the fully-screwed seat. 20 mm clears both with
+# margin while still excluding a bulb merely held nearby.
+#
+# The seat itself stays the FULLY-SCREWED pose -- set by a hard stop, repeatable
+# to 0.02 mm and vertical to 0.40 deg. Defining the goal as a slotted pose would
+# have encoded one attempt's accidental lean as the task definition.
+DEFAULT_DEPTH = 0.020          # m, tip-to-seat distance counting as slotted
 DEFAULT_HOLD_S = 1.0           # s it must stay there -- rejects passing through
 
 # An episode with implausible bulb frames is not usable regardless of where it
@@ -96,7 +103,7 @@ def main(argv=None):
     parser.add_argument("--out", default="success_trajectories",
                         help="output directory, relative to --root unless absolute")
     parser.add_argument("--depth", type=float, default=DEFAULT_DEPTH,
-                        help="tip-to-seat distance counting as screwed home (m)")
+                        help="tip-to-seat distance counting as slotted (m)")
     parser.add_argument("--hold-s", type=float, default=DEFAULT_HOLD_S,
                         help="how long it must stay within --depth to count")
     parser.add_argument("--rate-hz", type=float, default=20.0)

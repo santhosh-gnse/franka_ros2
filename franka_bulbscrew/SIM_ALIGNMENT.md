@@ -284,6 +284,86 @@ faster demonstrations; do not leave them mismatched.
 
 ---
 
+## 3b. Task change: the episode starts with the bulb already held
+
+Adopted 2026-08-30. The reach-and-grasp phase is removed; an episode is
+carry -> align -> screw. What this requires in `bulbscrew_mjx`:
+
+**Reset must spawn the bulb in the jaws.** Fingers closed to the measured
+**55.9 +- 10.3 mm**, arm at the new `QHOME`, bulb placed at the grasp point
+derived from the hand pose. Measured in-hand spread over 29 real
+demonstrations, as the randomisation to match:
+
+```
+x  +2.9 +- 2.1 mm     y  +4.0 +- 3.5 mm     z  +0.8 +- 3.5 mm
+|offset| mean 6.8 mm, max 16.5 mm      -> randomise over about +-4 mm
+```
+
+**Holding it is the hard part.** MJX contact-based grasping of a smooth sphere
+is unreliable. A `weld` equality between `bulb` and `hand` is the robust option
+now that the task never releases. Two costs, both worth stating rather than
+discovering: dropping the bulb stops being a possible failure mode, and
+`obs[7:10]` becomes exactly constant in sim while it varies by ~7 mm on the real
+robot. If that gap matters, use a compliant equality rather than a rigid weld.
+
+**`QHOME`** — set from the real home, `fr3_hand_tcp` at
+`[0.744, -0.162, 0.200]`, tool vertical:
+
+```python
+QHOME = [-0.216654, 0.825380, 0.003529, -1.152593, -0.002824, 1.977969, -1.260341]
+```
+
+**Horizon** can come down. Real episodes with the approach cut average 559 steps
+(27.9 s); ~700 leaves headroom.
+
+**The bulb no longer starts on the plank**, so its spawn position and the
+`holder` (already slated for deletion) stop mattering. The board still does —
+the arm passes over it.
+
+**`action[4]` becomes degenerate.** The gripper never opens, so that dimension
+is constant. Keeping it preserves the 5-D action space on both sides; just know
+the policy carries a dead input.
+
+
+## 3c. Task change: slotting, not screwing
+
+Adopted 2026-09-06, superseding the screwing variant above. The bulb is dropped
+into the socket mouth and left; nothing is threaded.
+
+**Success is position only.** Measured over two consecutive slotting attempts:
+
+```
+             tip in fr3_link0            d_seat    tilt
+attempt 0    [0.6063, 0.0786, 0.0780]    9.7 mm    6.08 deg
+attempt 1    [0.6084, 0.0785, 0.0807]   12.2 mm   16.09 deg
+```
+
+Position repeats to **2.7 mm**; tilt varies by **10 deg**. A slotted bulb rests
+against the socket rim at whatever angle it settles -- only screwing pulls it
+perpendicular. So the criterion must be yaw-invariant AND must not test
+uprightness:
+
+```
+solved  <=>  d_seat < 0.020 m, held for 1.0 s
+```
+
+**The goal frame stays the FULLY-SCREWED pose**, not a slotted one. That pose is
+set by a hard stop, repeats to 0.02 mm and is vertical to 0.40 deg; a slotted
+pose would have encoded one attempt's accidental 6 deg lean as the task
+definition, and every later episode would have been measured against it.
+
+**Consequences for the sim.** The screwing DoF stops mattering: `MAX_YAW_RATE`
+is no longer critical, the horizon can come down further (no 2-4 turns), and the
+`success_threshold` must move to the depth rule above. `QHOME`'s joint 7 goes
+back to the margin-maximising value, since the 346 deg wrist range is no longer
+the binding constraint.
+
+**Regrasping is no longer forced.** Under the screwing variant it was, by
+kinematics -- joint 7's full range is 346 deg against 2-4 turns needed. Slotting
+should be a single clean insertion, so `action[4]` really may be near-constant
+now, unlike under screwing.
+
+
 ## 4. Verifying the alignment
 
 Worth doing before trusting a training run:

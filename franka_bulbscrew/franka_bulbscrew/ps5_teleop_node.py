@@ -80,32 +80,30 @@ Z_SPEED = 0.6             # fraction of max_linear_speed for the up/down buttons
 JOY_TIMEOUT_S = 0.15
 
 PLANNING_GROUP = "fr3_arm"
-# fr3_hand_tcp = [0.671, -0.032, 0.250] in fr3_link0, tool exactly vertical
-# (0.00 deg tilt), minimum joint-limit margin 78.7 deg -- far clear of Servo's
-# joint_limit_margin (0.10 rad = 5.7 deg), inside which it halts on almost any
-# motion. Solved via /compute_ik on 2026-08-28.
+# fr3_hand_tcp = [0.7369, -0.1828, 0.2096] in fr3_link0, tool vertical, 81 mm
+# directly above the bulb's grasp point when the bulb stands on the plank.
+# Solved via /compute_ik with collision checking and confirmed on the real
+# robot: driven there and approved. 1.3 mm from target, 0.41 deg from straight
+# down, 1.0 mm laterally from the bulb's grasp axis.
 #
-# Deliberately NEUTRAL rather than poised at the bulb: it sits at the midpoint
-# between the bulb start and the socket seat, 25.8 cm from one and 27.3 cm from
-# the other, so every episode begins with the same reach-then-carry structure
-# the sim has. A home already at the grasp would also imply a precision the
-# reset does not have, since the bulb is placed by hand and varies slightly.
+# Joint 7 is the /compute_ik value, giving a 55.9 deg minimum joint-limit
+# margin -- far clear of Servo's 5.7 deg halt zone.
 #
-# Note this was NOT chosen to match bulbscrew_mjx's QHOME. This task is being
-# set up real-first, so the sim's QHOME gets set FROM this value instead --
-# see SIM_ALIGNMENT.md. (Selecting for closeness to the sim's shipped posture
-# would have been the wrong metric: its tool sits at [0.30, 0, 0.03], low and
-# close, which suits neither this socket nor this bulb.)
+# It was briefly set to -2.200 to buy 299 deg of wrist travel, back when the
+# task was SCREWING and joint 7's 346 deg range was the binding constraint. The
+# task is now SLOTTING: the bulb is dropped into the socket mouth and left, so
+# essentially no wrist rotation is needed and the margin is worth more than the
+# travel.
 #
 # Must stay equal to servo_ik_node's nullspace_target.
 HOME_JOINTS = {
-    "fr3_joint1": 0.201812,
-    "fr3_joint2": 0.461781,
-    "fr3_joint3": -0.293619,
-    "fr3_joint4": -1.651913,
-    "fr3_joint5": 0.149214,
-    "fr3_joint6": 2.091641,
-    "fr3_joint7": -0.853753,
+    "fr3_joint1": -0.288396,
+    "fr3_joint2": 0.807440,
+    "fr3_joint3": 0.070228,
+    "fr3_joint4": -1.160833,
+    "fr3_joint5": -0.054967,
+    "fr3_joint6": 1.966504,
+    "fr3_joint7": 1.963062,
 }
 JOINT_TOL = 0.01
 VEL_SCALE = 0.2
@@ -202,6 +200,13 @@ class BulbScrewTeleop(Node):
     def _home_sequence(self):
         self._busy = True
         try:
+            # Open the jaws first, matching the kinesthetic recorder. The task
+            # starts with the bulb placed into the jaws at the home pose, so
+            # arriving there closed means an extra step -- and homing while
+            # gripping would carry the bulb along. Released here, before the
+            # arm moves, rather than somewhere along the path.
+            self._grip_open = True
+            self.get_logger().info("gripper: open (homing)")
             ok = self._home_and_settle()
             self.get_logger().info("Home reached" if ok else "Home failed")
         finally:
