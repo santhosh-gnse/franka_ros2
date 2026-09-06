@@ -32,9 +32,9 @@
     # are measured, and safety_node outputs zero while either is false.
     # Work through NEED_TO_CONFIGURE.md in order.
     # ==========================================================================
-    # Steps 2-4 of NEED_TO_CONFIGURE.md are done and independently verified:
-    # base anchor (0.04 mm loop closure), bulb frame (tip holds 18.0 mm through
-    # a 357 deg spin), socket seat (0.52 deg from vertical).
+    # TRUE as of 2026-09-06: hand-eye, plank, bulb frame and socket have all
+    # been re-measured in that order, and the seat height reproduces the
+    # 2026-08-30 figure to 1.5 mm.
     calibration_configured: true
     # PROVISIONAL bounds only -- see workspace_* below. Enabled so the arm can
     # be driven to find the real edges.
@@ -62,24 +62,27 @@
     #
     # Note any error in bulb_tip_offset cancels here for the seated pose, since
     # the same offset defines both the tip and this seat.
-    # RE-DERIVED 2026-08-30 through the re-measured 5-marker bulb frame, with
-    # the bulb screwed fully home (482 mocap samples, 0.01-0.11 mm jitter). The
-    # seat IS the screw tip in that configuration.
+    # RE-DERIVED 2026-09-06 through the re-measured bulb frame, with the bulb
+    # screwed fully home (601 mocap samples, 0.01-0.02 mm jitter). The seat IS
+    # the screw tip in that configuration.
     #
-    # Seat in fr3_link0: [0.5993, 0.0972, 0.0672] -- 28.3 mm above the measured
-    # plank top (0.0389), which is where a socket standing on the plank belongs.
-    # The seat frame's z is 0.64 deg from vertical, so the observation's vertical
+    # Seat in fr3_link0: [0.6084, 0.0787, 0.0685], sitting 29.8 mm above the
+    # re-measured plank (0.0387). That matches the 28.3 mm measured on
+    # 2026-08-30 to 1.5 mm -- the same physical socket on the same plank, before
+    # the base, the socket and the markers all moved. Independent confirmation
+    # that the chain is consistent again, since nothing about the 2026-08-30
+    # figure fed this solve.
+    #
+    # Seat-frame z is 0.40 deg from vertical, so the observation's vertical
     # component lands in index 2 as bulbscrew_mjx expects.
     #
-    # Cross-check that did not feed the solve: the grasp arithmetic in
-    # episode_0000 predicted z ~ 0.0711 from forward kinematics alone. Measured
-    # 0.0672 -- 3.9 mm apart, from two chains sharing nothing.
-    #
-    # The superseded value was [2.044912, 0.005265, 1.397291], which put the
-    # seat at z = 0.0195, i.e. 19 mm BELOW the plank the socket stands on. The
-    # lateral terms were right all along; the whole error was vertical.
-    fixed_socket_position: [2.046294, 0.054203, 1.395794]
-    fixed_socket_quaternion_wxyz: [0.684591, -0.692390, -0.162113, -0.160157]
+    # The seat frame's yaw relative to fr3_link0 is now -77.7 deg (it was
+    # 150.7 deg before the move). Anything reconstructing positions from a
+    # recorded episode must use the rotation that was true for THAT episode --
+    # see FINDINGS B17. For episodes recorded from now on:
+    #   Q_L0_SEAT = [0.778551, -0.000876, -0.003338, -0.627571]   # wxyz
+    fixed_socket_position: [1.894304, 0.063569, 1.412332]
+    fixed_socket_quaternion_wxyz: [0.427086, -0.423297, 0.565914, 0.564055]
     socket_seat_offset: [0.0, 0.0, 0.018]
 
     # --- bulb (tracked as "bulb-trirl") ---------------------------------------
@@ -117,29 +120,27 @@
     # the axis or the offset were wrong -- and note it does NOT depend on the
     # socket, so it cannot be fooled the way "place it at the goal and see if
     # the relative pose is small" can.
-    # RE-MEASURED 2026-08-30 for the 5-marker set (the earlier 3-marker
-    # calibration is void: adding markers reassigns Motive's origin and axes).
+    # RE-MEASURED 2026-09-06 for the current marker set. Stood on the plank and
+    # spun through 778 deg, 4202 samples.
+    #   * AXIS LOCATION from the circle the marker origin sweeps -- radius
+    #     6.70 mm, fit residual rms 1.62 mm, so the two lateral terms are good
+    #     to about +-3 mm and no better;
+    #   * AXIAL term from the plank top at z = 0.0387 in fr3_link0, touched with
+    #     the closed gripper. A robot measurement with no mocap in it.
+    # Tip consistency across the sweep: 4.4 / 0.3 / 3.8 mm (x / axial / z).
     #
-    # Method, replacing the one that produced the bad numbers: the bulb was
-    # stood on the plank and spun through 675 deg while /rigid_bodies was
-    # recorded (3841 samples, 31.8 s).
-    #   * the AXIS location comes from the circle the marker origin sweeps --
-    #     radius only 8.4 mm, fit residual rms 2.2 mm, so the two lateral terms
-    #     are good to about +-3 mm and no better;
-    #   * the AXIAL term comes from the plank top at z = 0.0389 in fr3_link0,
-    #     touched directly with the closed gripper. That is a robot measurement
-    #     with no mocap in it, and it is what the old calibration got wrong: it
-    #     ASSUMED an 18 mm plank, 20.9 mm out.
-    # Tip consistency across the sweep: 5.4 / 0.4 / 5.9 mm (x / axial / z).
+    # The marker origin sits 56.4 mm above the screw tip, against 70.1 mm for
+    # the superseded set -- a 13.7 mm change. That number explains the anomaly
+    # this replaced: the seat back-solved through the stale frame came out
+    # 16.2 mm above the plank, and 16.2 + 13.7 = 29.9 against 28.3 measured on
+    # 2026-08-30. Agreement to 1.6 mm, so the marker change accounted for all of
+    # it and nothing else had shifted.
     #
-    # Do NOT re-derive this by imposing the tip offset. The obvious
-    # fixed-contact-point solve is degenerate here -- the marker origin already
-    # sits on the spin axis, so every point along the axis is stationary and the
-    # least-squares places the contact arbitrarily (it returned -172 mm, i.e.
-    # below the floor, on this very dataset).
-    #
-    # The marker origin sits 70.1 mm above the screw tip.
-    bulb_marker_to_object_translation: [-0.00271, -0.01699, -0.0017]
+    # Do NOT re-derive this by imposing the tip offset, and do NOT use the
+    # fixed-contact-point solve -- it is degenerate when the marker origin sits
+    # on the spin axis (radius here is under 7 mm) and returns a contact below
+    # the floor. See FINDINGS.
+    bulb_marker_to_object_translation: [-0.00003, -0.00334, 0.00227]
     bulb_marker_to_object_quaternion_wxyz: [0.707107, -0.707107, 0.0, 0.0]
     # Along the canonical bulb body's z axis, from bulbscrew_mjx.
     #
@@ -256,8 +257,19 @@
     # lands at [-0.001, -0.034, 0.024] in fr3_link0 -- 4 cm from the robot's own
     # base origin, which is where a marker plate on the base physically is. That
     # check does not reuse any part of the calibration.
-    optitrack_to_robot_base_translation: [2.56989, -1.40344, -0.00600]
-    optitrack_to_robot_base_quaternion_wxyz: [0.02613, 0.00029, 0.00007, 0.99966]
+    # RE-MEASURED 2026-09-06 after the robot base was moved. 10 samples, last
+    # six converged within 3.1 mm x / 3.8 mm y / 5.1 mm z.
+    #
+    #   ros2 run tf2_ros static_transform_publisher \
+    #     --frame-id fr3_link0 --child-frame-id optitrack \
+    #     --x 2.40446 --y -1.45694 --z -0.00984 \
+    #     --qx 0.00077 --qy 0.00205 --qz 0.99944 --qw 0.03329
+    #
+    # The base moved 174 mm from the 2026-08-30 calibration
+    # ([2.56989, -1.40344, -0.00600]), which is why everything expressed in
+    # fr3_link0 below had to be re-derived.
+    optitrack_to_robot_base_translation: [2.40446, -1.45694, -0.00984]
+    optitrack_to_robot_base_quaternion_wxyz: [0.03329, 0.00077, 0.00205, 0.99944]
 
     # --- workspace ------------------------------------------------------------
     # Bounds on fr3_hand_tcp in fr3_link0 -- a STATIC frame. (Not the

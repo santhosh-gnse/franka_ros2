@@ -39,21 +39,21 @@ REPO = Path(__file__).resolve().parents[1]
 MODEL = REPO / "sim_old" / "bulbscrew_mjx" / "data" / "scene_mjx_bulb.xml"
 
 TIP_OFF = -0.053                                  # canonical origin -> screw tip
-SEAT = np.array([0.5993, 0.0972, 0.0672])         # measured 2026-08-30, fr3_link0
+SEAT = np.array([0.6084, 0.0787, 0.0685])         # re-measured 2026-09-06, fr3_link0
 
 # obs[0:3] and obs[3:7] are expressed in the SEAT frame, which on this rig is
-# rotated 150.7 deg about z relative to fr3_link0. They are NOT fr3_link0
+# rotated -77.7 deg about z relative to fr3_link0. They are NOT fr3_link0
 # coordinates: using them as such rotates the bulb about the socket by that
 # angle and puts it roughly 0.4 m from where it really is. This matrix and
 # quaternion take the seat frame into fr3_link0.
 # Derived as conj(base_q) * fixed_socket_quaternion_wxyz, where base_q is
 # fr3_link0's orientation in the mocap map frame from the hand-eye anchor.
-Q_L0_SEAT = np.array([0.253245, 0.001505, -0.005415, 0.967386])   # wxyz
-R_L0_SEAT = np.array([[-0.871729, -0.489988,  0.000169],
-                      [ 0.489955, -0.871675, -0.011239],
-                      [ 0.005654, -0.009714,  0.999937]])
+Q_L0_SEAT = np.array([0.778551, -0.000876, -0.003338, -0.627571])   # wxyz
+R_L0_SEAT = np.array([[ 0.212286,  0.977199, -0.004098],
+                      [-0.977187,  0.212307,  0.005554],
+                      [ 0.006297,  0.002826,  0.999976]])
 SEAT_OFF = np.array([0.0, 0.0, 0.018])            # socket body origin -> seat site
-PLANK_TOP = 0.0389                                # measured with the closed gripper
+PLANK_TOP = 0.0387                                # measured with the closed gripper
 # Current workspace bounds; flagged in the overlay so a demonstration that
 # deployment could not reproduce is visible rather than inferred.
 WS_LO = np.array([0.35, -0.35, 0.02])
@@ -95,7 +95,7 @@ def main():
     # The EXTENT is a render convenience, not a measurement: the real plank's
     # footprint has not been surveyed.
     bid = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, "board")
-    m.geom_pos[bid] = [0.62, -0.03, PLANK_TOP - m.geom_size[bid][2]]
+    m.geom_pos[bid] = [0.67, -0.05, PLANK_TOP - m.geom_size[bid][2]]
 
     jadr = [m.joint(f"fr3_joint{i+1}").qposadr[0] for i in range(7)]
     f1 = m.joint("finger_joint1").qposadr[0]
@@ -105,7 +105,7 @@ def main():
     d_seat = np.linalg.norm(S[:, 0:3], axis=1)
     quat = np.where(S[:, 3:4] < 0, -S[:, 3:7], S[:, 3:7])
     task_err = d_seat + 0.1 * 2*np.arccos(np.clip(quat[:, 0], -1.0, 1.0))
-    solved = task_err < 0.02
+    solved = d_seat < 0.020    # slotting: position only, no uprightness
     grasp_err = np.linalg.norm(S[:, 7:10], axis=1)
     first = int(np.argmax(solved)) if solved.any() else None
 
