@@ -59,7 +59,7 @@ import rclpy
 import tf2_ros
 from rclpy.node import Node
 from rclpy.time import Time
-from controller_manager_msgs.srv import SwitchController
+from controller_manager_msgs.srv import ListControllers, SwitchController
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
@@ -91,6 +91,10 @@ class KinestheticRecorder(Node):
             "max_linear_speed": 0.10,
             "max_yaw_rate": 0.75,
             "grip_max": 0.04,
+            # Time allowed for the jaws to open before homing moves the arm.
+            # franka_gripper's Move is a goal-based action, so publishing a
+            # width only starts it.
+            "gripper_settle_s": 1.0,
             # Exponential smoothing on the derived velocity. Hand motion is
             # noisy at 20 Hz; without this the expert looks like it jitters.
             "velocity_filter_alpha": 0.4,
@@ -102,6 +106,7 @@ class KinestheticRecorder(Node):
             "open_button": 2,     # Triangle
             "home_button": 10,    # PS
             "switch_service": "/controller_manager/switch_controller",
+            "list_service": "/controller_manager/list_controllers",
             "move_action": "/move_action",
             "arm_controller": "fr3_arm_controller",
             "gravity_controller": "gravity_compensation_example_controller",
@@ -157,6 +162,8 @@ class KinestheticRecorder(Node):
         # simply times out -- which is exactly how homing was failing, silently,
         # after ~5 s. ps5_teleop_node uses the same arrangement for this reason.
         self._cbg = ReentrantCallbackGroup()
+        self._list = self.create_client(ListControllers, g("list_service").value,
+                                        callback_group=self._cbg)
         self._switch = self.create_client(SwitchController, g("switch_service").value,
                                           callback_group=self._cbg)
         self._move = (ActionClient(self, MoveGroup, g("move_action").value,
@@ -192,13 +199,39 @@ class KinestheticRecorder(Node):
         if edge(int(g("home_button").value)) and not self._homing:
             threading.Thread(target=self._home_sequence, daemon=True).start()
 
+    def _active_controllers(self):
+        """Names of the controllers currently active, or None if unknown."""
+        if not self._list.wait_for_service(timeout_sec=5.0):
+            return None
+        future = self._list.call_async(ListControllers.Request())
+        t = time.time()
+        while not future.done() and time.time() - t < 5.0:
+            time.sleep(0.02)
+        result = future.result()
+        if result is None:
+            return None
+        return {c.name for c in result.controller if c.state == "active"}
+
     def _switch_controllers(self, activate, deactivate):
         if not self._switch.wait_for_service(timeout_sec=5.0):
             self.get_logger().error("controller_manager unavailable")
             return False
+        # Ask only for changes that are actually needed. A STRICT switch fails
+        # outright if told to deactivate a controller that is not active -- and
+        # the gravity controller is not even LOADED unless guiding mode has been
+        # entered at least once. That made the home button do nothing at all,
+        # with the failure reported as "could not switch to the arm controller;
+        # still guiding", which describes the symptom and not the cause.
+        active = self._active_controllers()
         request = SwitchController.Request()
-        request.activate_controllers = [activate]
-        request.deactivate_controllers = [deactivate]
+        if active is None:                       # cannot tell; ask for both
+            request.activate_controllers = [activate]
+            request.deactivate_controllers = [deactivate]
+        else:
+            request.activate_controllers = [] if activate in active else [activate]
+            request.deactivate_controllers = [deactivate] if deactivate in active else []
+            if not request.activate_controllers and not request.deactivate_controllers:
+                return True                      # already as requested
         # STRICT: refuse rather than half-switch, which would leave the arm with
         # nothing holding it up.
         request.strictness = SwitchController.Request.STRICT
@@ -210,7 +243,7 @@ class KinestheticRecorder(Node):
         return bool(result is not None and result.ok)
 
     def _home_sequence(self):
-        """Stiffen, drive to HOME_JOINTS, then hand back to guiding."""
+        """Open the jaws, stiffen, drive to HOME_JOINTS, then hand back to guiding."""
         g = self.get_parameter
         self._homing = True
         arm = g("arm_controller").value
@@ -222,6 +255,18 @@ class KinestheticRecorder(Node):
             if self._move is None:
                 self.get_logger().error("moveit_msgs unavailable: cannot home")
                 return
+            # Open first, and before the arm moves. The task starts with the
+            # bulb placed into the jaws at the home pose, so arriving there
+            # still closed means the operator has to open it as a separate step
+            # -- and homing while gripping the bulb would carry it along.
+            #
+            # Opening BEFORE the motion rather than after is deliberate: if the
+            # jaws are holding the bulb, it is released here, while the arm is
+            # still where the operator left it, instead of somewhere along the
+            # path to home.
+            self.grip_pub.publish(Float32(data=float(g("grip_max").value)))
+            self.get_logger().info("gripper: open (homing)")
+            time.sleep(float(g("gripper_settle_s").value))
             self.get_logger().warning("HOMING -- the arm is about to stiffen and move; let go")
             if not self._switch_controllers(arm, gravity):
                 self.get_logger().error("could not switch to the arm controller; still guiding")
