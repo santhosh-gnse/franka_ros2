@@ -1,0 +1,75 @@
+/**:
+  ros__parameters:
+    control_rate_hz: 20.0
+    dataset_root: ~/pizza_data
+    observation_topic: /pizza/observation
+    observation_valid_topic: /pizza/observation_valid
+    joint_state_topic: /joint_states
+    joint_names: [fr3_joint1, fr3_joint2, fr3_joint3, fr3_joint4, fr3_joint5, fr3_joint6, fr3_joint7]
+    robot_base_frame: fr3_link0
+    # Same physical tool as franka_pusht (custom_pusher_ee.xacro), mounted the
+    # same way -- its own frame name carries over unchanged.
+    tcp_frame: fr3_pusher_tcp
+    pose_timeout_s: 0.15
+
+    # Metres per second at |action| = 1. PROVISIONAL: copied from
+    # franka_pusht's validated value, same tool on the same robot. Kinesthetic
+    # collection does not exercise this constant at all -- actions are derived
+    # from whatever speed the operator actually moves at -- so it only matters
+    # once a policy is deployed. Confirm the ACHIEVED speed then, not the
+    # commanded one (franka_bulbscrew FINDINGS B5: on PushT the achieved speed
+    # ran ~25% below the commanded value).
+    max_linear_speed: 0.10
+
+    # --- height and orientation, DEPLOYMENT-ONLY (same pattern as franka_pusht) -
+    # 2026-09-08: originally tried to actively lock these during kinesthetic
+    # teaching too (via CartesianImpedanceExampleController, x/y soft,
+    # z/roll/pitch/yaw stiff), unlike franka_pusht/franka_bulbscrew. That hit
+    # sustained oscillation the moment the tool touched the board -- a
+    # rigid-on-rigid contact instability inherent to holding a stiff Cartesian
+    # spring against an undamped surface, not a tuning mistake (a genuine,
+    # separate free-space damping bug in that controller WAS found and fixed
+    # along the way -- see franka_example_controllers' git history -- but that
+    # did not fix the contact case, and the controller is not used here).
+    # Reverted to the standard project pattern: guiding_mode.py runs plain
+    # GravityCompensationExampleController (fully compliant) during teaching,
+    # and the operator's own hand keeps height/orientation close enough for a
+    # real demonstration. These constants remain for a FUTURE
+    # safety_node/servo_ik_node (copy franka_pusht's) to enforce on a deployed
+    # policy's actions -- which, unlike a human, can drift outside the safe
+    # envelope -- not built yet.
+    z_hold_enabled: true
+    # 0.0441 (touched board surface) + 0.02 (task requirement). The touch was
+    # measured 2026-09-08 with the pusher tip while gravity-compensated (180
+    # joint-state messages confirmed live, std 3.4e-06 rad -- not a frozen
+    # reading), 9453 samples of fr3_pusher_tcp at exactly zero spread.
+    # Cross-checks the pizza-center marker's own height (0.0435 m) to 0.6 mm --
+    # two independent measurements, one FK-only and one through mocap,
+    # agreeing on the same physical surface. MUST equal pizza_robot.yaml's
+    # home_position z and guiding_mode's home_position z.
+    z_hold_target: 0.0641
+    z_hold_gain: 2.0
+    max_z_hold_speed: 0.05
+    orientation_hold_enabled: true
+    # Tool-down orientation. A fixed WORLD-frame quaternion (gravity defines
+    # "down"), so it does not depend on the robot base's position at all --
+    # reused directly from franka_pusht's measured value, since it is the same
+    # physical tool mounted the same way. Re-measure only if that changes.
+    # MUST equal guiding_mode's orientation_hold_quaternion_wxyz.
+    orientation_hold_quaternion_wxyz: [0.0, 0.7071068, 0.7071068, 0.0]
+    orientation_hold_gain: 1.0
+    max_angular_speed: 0.5
+
+    # --- collision reflex -------------------------------------------------------
+    # Spreading is contact-rich by design: the tool presses on the board for the
+    # whole task. Franka's defaults are tuned for free-space motion and will
+    # trip on that pressure. Borrowed from franka_bulbscrew's profile as a
+    # starting point -- NOT tuned for this task's actual contact forces.
+    #
+    # SAFETY: this is the reflex that stops the arm when it hits something it
+    # should not. Lower `scale` to make it react sooner (0.5 is roughly the
+    # Franka default).
+    collision_service: /service_server/set_force_torque_collision_behavior
+    torque_thresholds: [40.0, 40.0, 38.0, 38.0, 32.0, 28.0, 24.0]
+    force_thresholds: [40.0, 40.0, 40.0, 50.0, 50.0, 50.0]
+    scale: 1.0

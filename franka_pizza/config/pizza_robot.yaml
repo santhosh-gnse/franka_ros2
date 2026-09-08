@@ -1,0 +1,48 @@
+/**:
+  ros__parameters:
+    # ==========================================================================
+    # CALIBRATION CHECKLIST -- see NEED_TO_CONFIGURE.md.
+    # observation_node outputs invalid while calibration_configured is false,
+    # so nothing downstream can silently run on placeholder geometry.
+    # ==========================================================================
+    calibration_configured: false
+
+    # Board centre, IN THE HORIZONTAL PLANE ONLY -- z below is the LOCKED
+    # height, not the board surface. There is no separate goal the way PushT
+    # and BulbScrew have one, since spreading has no single target pose.
+    #
+    # x, y measured 2026-09-08: a 3-marker Rigid Body ("pizza-center") placed
+    # at the board's physical centre, 382 samples at 0.01 mm jitter, pushed
+    # through a freshly re-run hand-eye anchor (the SAME anchor
+    # franka_bulbscrew uses -- it is a property of the robot base and mocap
+    # system, not of any task):
+    #   --x 2.41246 --y -1.44406 --z 0.00355
+    #   --qx 0.00096 --qy 0.00341 --qz 0.99955 --qw 0.02992
+    # Cross-check: fr3-calibration-ee lands at [0.762, -0.186, 0.377] through
+    # this same anchor, matching an independent reading from earlier the same
+    # day ([0.762, -0.185, 0.368]) to a few mm.
+    #
+    # z = 0.0641: the board was touched with the closed tool (0.0441, 9453
+    # samples at exactly zero spread -- see z_hold_target in
+    # pizza_common.yaml, which this MUST equal), plus 2 cm. The task holds the
+    # tool 2 cm above the plank at all times -- including during kinesthetic
+    # teaching, not just at rest -- so home is defined at that height, not at
+    # the board surface.
+    home_position: [0.6247, -0.0094, 0.0641]
+
+    # Arm joint configuration that puts fr3_pusher_tcp at home_position, tool
+    # pointing straight down. Solved via /compute_ik (sweeping wrist yaw,
+    # keeping the best joint margin) and CONFIRMED on the real robot: driven
+    # there, achieved pose 1.3 mm from target, 0.29 deg from straight down.
+    # Minimum joint-limit margin 64.7 deg (joint 4); every other joint is
+    # 66-142 deg. Must be kept equal to kinesthetic_recorder_node.HOME_JOINTS.
+    home_joint_positions: [-0.423000, 0.625100, 0.423600, -1.912700, -0.390000, 2.456700, -1.858600]
+
+    # PROVISIONAL. Not used by kinesthetic collection at all -- there is no
+    # safety_node in that path to enforce it -- so it is only relevant once a
+    # policy is deployed. Drive to each real edge and read ee_pos_rel_home
+    # before trusting these; do not just guess a box around home_position.
+    workspace_configured: false
+    workspace_x: [0.0, 0.0]
+    workspace_y: [0.0, 0.0]
+    workspace_z: [0.0, 0.0]
