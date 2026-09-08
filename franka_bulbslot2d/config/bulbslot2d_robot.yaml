@@ -1,0 +1,117 @@
+/**:
+  ros__parameters:
+    # Output topics of optitrack_bridge_node.
+    bulb_pose_topic: /bulbslot2d/bulb_pose
+    joint_state_topic: /joint_states
+    # franka_gripper is NOT started by moveit.launch.py -- needs its own
+    # terminal. Same as franka_bulbscrew: verified live, /fr3/franka_gripper,
+    # NOT /fr3_gripper.
+    #   ros2 launch franka_gripper gripper.launch.py robot_ip:=... namespace:=fr3
+    gripper_joint_state_topic: /fr3/franka_gripper/joint_states
+    gripper_grasp_action: /fr3/franka_gripper/grasp
+    gripper_move_action: /fr3/franka_gripper/move
+    optitrack_world_frame: map
+    robot_base_frame: fr3_link0
+    tcp_frame: fr3_hand_tcp
+
+    rigid_bodies_topic: /rigid_bodies
+    bulb_rigid_body_name: bulb-trirl
+    pole_base_rigid_body_name: franka_pole_base
+
+    command_source: teleop
+
+    # ==========================================================================
+    # This package reuses franka_bulbscrew's calibration verbatim -- same
+    # robot, same bulb, same socket, nothing physically re-measured. What's
+    # new here is the PLANE (plane_yaw_rad / x_prime_hold_target /
+    # workspace_yprime below), derived from that same calibration but never
+    # driven on the real robot through THIS package's nodes yet.
+    # calibration_configured stays true (the underlying numbers are real,
+    # inherited from franka_bulbscrew). workspace_configured was verified true
+    # 2026-09-08 at a safe height well clear of the socket: Y_PRIME/X_PRIME
+    # math confirmed correct (X' held within ~4mm through both a line-motion
+    # and a large vertical excursion, orientation held to 0.12 deg error, no
+    # controller faults). ps5_teleop_node's stick mapping changed AFTER that
+    # verification (combined 2-D stick instead of stick+triggers) -- re-check
+    # that the combined mapping still feels right before trusting it near the
+    # actual socket, but the underlying plane/hold math this flag gates is
+    # already confirmed.
+    # ==========================================================================
+    calibration_configured: true
+    workspace_configured: true
+
+    # --- socket (bolted down, measured once) ----------------------------------
+    # Copied verbatim from franka_bulbscrew/config/bulbscrew_robot.yaml,
+    # current as of 2026-09-06 (re-derived after the base/socket/markers all
+    # moved). See that file's inline comments for the full calibration
+    # history and provenance -- not repeated here since nothing about it
+    # changed for this package.
+    #
+    # Seat in fr3_link0: [0.6084, 0.0787, 0.0685]. Seat-frame yaw relative to
+    # fr3_link0 is -77.7 deg -- irrelevant to this package (observation_node
+    # still expresses obs[0:3]/obs[3:7] in the seat frame, unchanged), but
+    # NOT the same thing as plane_yaw_rad below, which is a different,
+    # independently-computed quantity (the home->seat horizontal direction,
+    # not the seat's own intrinsic orientation).
+    fixed_socket_position: [1.894304, 0.063569, 1.412332]
+    fixed_socket_quaternion_wxyz: [0.427086, -0.423297, 0.565914, 0.564055]
+    socket_seat_offset: [0.0, 0.0, 0.018]
+
+    # --- bulb (tracked as "bulb-trirl") ---------------------------------------
+    # Copied verbatim from franka_bulbscrew/config/bulbscrew_robot.yaml.
+    bulb_marker_to_object_translation: [-0.00003, -0.00334, 0.00227]
+    bulb_marker_to_object_quaternion_wxyz: [0.707107, -0.707107, 0.0, 0.0]
+    # !! Same SUSPECT flag as franka_bulbscrew carries on this value -- see
+    # that package's FINDINGS.md B16. Inherited unchanged, not re-resolved
+    # here.
+    bulb_tip_offset: -0.053
+    bulb_neck_offset: 0.0367
+
+    # --- robot base anchor ----------------------------------------------------
+    # Copied verbatim from franka_bulbscrew/config/bulbscrew_robot.yaml,
+    # re-measured 2026-09-06 after the robot base was moved.
+    optitrack_to_robot_base_translation: [2.40446, -1.45694, -0.00984]
+    optitrack_to_robot_base_quaternion_wxyz: [0.03329, 0.00077, 0.00205, 0.99944]
+
+    # --- the 2-D plane (NEW for this package) ----------------------------------
+    # Everything below is derived, not measured -- computed from the two fixed
+    # points this task moves between. See README.md for the full derivation;
+    # summary:
+    #
+    #   home (bulb-in-hand start): [0.7369, -0.1828, 0.2096]  in fr3_link0
+    #     (ps5_teleop_node.HOME_JOINTS' FK target, same as franka_bulbscrew,
+    #     UNCHANGED)
+    #   seat (socket target):      [0.6084, 0.0787, 0.0685]   in fr3_link0
+    #     (fixed_socket_position + socket_seat_offset above, same as
+    #     franka_bulbscrew)
+    #
+    # yaw = atan2(seat.y - home.y, seat.x - home.x) = 2.0275369 rad (116.169 deg)
+    # defines Y_PRIME = [cos(yaw), sin(yaw), 0] (actuated, home->seat direction)
+    # and X_PRIME = [-sin(yaw), cos(yaw), 0] (held, perpendicular, horizontal).
+    #
+    # Verified numerically at plan time: X_PRIME . home == X_PRIME . seat ==
+    # -0.5807445 to full float precision -- home and seat are EXACTLY coplanar
+    # by construction, not an approximation. Y_PRIME . home = -0.48905,
+    # Y_PRIME . seat = -0.19769 (seat is further along +Y_PRIME).
+    plane_yaw_rad: 2.0275369
+    x_prime_hold_target: -0.5807445
+    x_prime_hold_gain: 2.0
+    max_x_prime_hold_speed: 0.05
+
+    # --- workspace --------------------------------------------------------
+    # NOT the stale [0.671, -0.032, 0.250]-home / mismatched-seat comment
+    # block that bulbscrew_robot.yaml's own workspace_x/y/z section carries
+    # (flagged as unreliable during this package's planning -- that home
+    # figure was superseded by the current [0.7369, -0.1828, 0.2096] weeks
+    # ago and the block was never updated). These bounds are computed fresh
+    # from the CURRENT values above.
+    #
+    # workspace_yprime: margin beyond home (-0.489) and seat (-0.198) along
+    # Y_PRIME. workspace_z: reused unchanged from franka_bulbscrew's own
+    # z-bound, which that package already checked against a real driven tool
+    # path (home z 0.2096 and seat z 0.0685 both sit well inside it).
+    #
+    # PROVISIONAL until driven and confirmed through THIS package -- see
+    # workspace_configured above and README.md's verification steps.
+    workspace_yprime: [-0.55, -0.15]
+    workspace_z: [0.02, 0.45]

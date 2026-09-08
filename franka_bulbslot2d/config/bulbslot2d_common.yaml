@@ -1,0 +1,62 @@
+/**:
+  ros__parameters:
+    control_rate_hz: 20.0
+    observation_timeout_s: 0.15
+    action_timeout_s: 0.15
+    pose_timeout_s: 0.15
+    joint_names: [fr3_joint1, fr3_joint2, fr3_joint3, fr3_joint4, fr3_joint5, fr3_joint6, fr3_joint7]
+    gripper_joint_names: [fr3_finger_joint1, fr3_finger_joint2]
+    observation_topic: /bulbslot2d/observation
+    observation_valid_topic: /bulbslot2d/observation_valid
+    teleop_action_topic: /bulbslot2d/teleop_action
+    policy_action_topic: /bulbslot2d/policy_action
+    executed_action_topic: /bulbslot2d/executed_action
+    deadman_topic: /bulbslot2d/deadman
+    gripper_command_topic: /bulbslot2d/gripper_width
+    # safety_node does not talk to Servo directly: servo_ik_node consumes this
+    # twist, resolves it into joint velocities with the sim's null-space term,
+    # and publishes JointJog to Servo instead. Same pattern as franka_bulbscrew.
+    servo_command_topic: /bulbslot2d/desired_twist
+    dataset_root: ~/bulbslot2d_data
+
+    # --- collision reflex ------------------------------------------------------
+    # Identical to franka_bulbscrew's -- same robot, same gripper, same
+    # contact-rich style of task (lifting/carrying the bulb, seating it in the
+    # socket), just a reduced action space to get there.
+    #
+    # SAFETY: this is the reflex that stops the arm when it hits something it
+    # should not. Raising it trades that protection for tolerance. Lower `scale`
+    # to make the arm react sooner (0.5 is roughly the Franka default).
+    collision_service: /service_server/set_force_torque_collision_behavior
+    torque_thresholds: [40.0, 40.0, 38.0, 38.0, 32.0, 28.0, 24.0]
+    force_thresholds: [40.0, 40.0, 40.0, 50.0, 50.0, 50.0]
+    scale: 1.0
+
+    # --- action scaling -------------------------------------------------------
+    # What the recorded demonstrations are LABELLED with. Only two DOF now:
+    # along the home-seat line, and vertical -- no wrist yaw, since this
+    # version has no commanded yaw dimension at all (see safety_node.py).
+    max_linear_speed: 0.10
+    grip_max: 0.04
+
+    # --- orientation hold -----------------------------------------------------
+    # Held on ALL 3 axes, unlike franka_bulbscrew where yaw is commanded and
+    # overwrites this hold's z term. There is no yaw action here to overwrite
+    # it with, so the raw orientation_error_vector correction applies
+    # unmodified -- which means, unlike franka_bulbscrew, the exact yaw baked
+    # into this value DOES matter: get it wrong and the hold actively fights
+    # to rotate the tool toward the wrong target the moment it activates.
+    #
+    # NOT franka_bulbscrew's value ([0.0, 0.731027, 0.682348, 0.0], measured
+    # 2026-08-28). That value predates the 2026-09-06 base/socket
+    # recalibration and predates HOME_JOINTS being re-solved for slotting
+    # (commit b2ef60b) -- measured live at the CURRENT HOME_JOINTS on
+    # 2026-09-08, it was 164 degrees off, not a small yaw drift. This is a
+    # fresh measurement at the current HOME_JOINTS (joints confirmed within
+    # 0.8 deg of HOME_JOINTS at measurement time; 7345 tf samples over ~6s,
+    # std ~1e-6 rad -- not a transient reading), forced exactly vertical the
+    # same way bulbscrew's value was: zero the w and z components of the
+    # measured quaternion, keep x/y, renormalize.
+    orientation_hold_gain: 3.0
+    max_angular_speed: 1.5
+    hold_quaternion_wxyz: [0.0, 0.77506, -0.63188, 0.0]
