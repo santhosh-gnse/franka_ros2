@@ -14,6 +14,7 @@
 
 #include "franka_example_controllers/fr3/cartesian_impedance_example_controller.hpp"
 
+#include <algorithm>
 #include <cassert>
 
 namespace franka_example_controllers {
@@ -22,11 +23,35 @@ CartesianImpedanceExampleController::CartesianGains CartesianImpedanceExampleCon
     const std::array<double, num_cartesian_dof>& k) {
   CartesianGains g;
   for (int i = 0; i < num_cartesian_dof; ++i) {
-    const double ki = std::max(0.0, k[i]);
-    g.stiffness(i, i) = ki;
-    g.damping(i, i) = 2.0 * std::sqrt(ki);  // critically-damped
+    g.stiffness(i, i) = std::max(0.0, k[i]);
   }
   return g;
+}
+
+Eigen::Matrix<double, CartesianImpedanceExampleController::num_cartesian_dof,
+             CartesianImpedanceExampleController::num_cartesian_dof>
+CartesianImpedanceExampleController::computeCartesianDamping(
+    const Eigen::Matrix<double, num_cartesian_dof, num_joints>& jacobian,
+    const Eigen::Matrix<double, num_joints, num_joints>& mass_matrix,
+    const Eigen::Matrix<double, num_cartesian_dof, num_cartesian_dof>& stiffness,
+    double damping_ratio) const {
+  Eigen::Matrix<double, num_cartesian_dof, num_cartesian_dof> damping =
+      Eigen::Matrix<double, num_cartesian_dof, num_cartesian_dof>::Zero();
+
+  const Eigen::Matrix<double, num_joints, num_joints> mass_inv = mass_matrix.inverse();
+  const Eigen::Matrix<double, num_cartesian_dof, num_cartesian_dof> lambda_inv =
+      jacobian * mass_inv * jacobian.transpose();
+  const Eigen::Matrix<double, num_cartesian_dof, num_cartesian_dof> lambda = lambda_inv.inverse();
+
+  for (int i = 0; i < num_cartesian_dof; ++i) {
+    double reflected_mass = lambda(i, i);
+    if (!std::isfinite(reflected_mass) || reflected_mass <= 0.0) {
+      reflected_mass = 1.0;  // near-singular Lambda: fall back to the old assumption
+    }
+    reflected_mass = std::clamp(reflected_mass, kMinReflectedMass, kMaxReflectedMass);
+    damping(i, i) = 2.0 * damping_ratio * std::sqrt(stiffness(i, i) * reflected_mass);
+  }
+  return damping;
 }
 
 CartesianImpedanceExampleController::CallbackReturn CartesianImpedanceExampleController::on_init() {
@@ -36,6 +61,11 @@ CartesianImpedanceExampleController::CallbackReturn CartesianImpedanceExampleCon
     auto_declare<double>("nullspace_stiffness", 20.0);
     auto_declare<double>("translational_stiffness", 150.0);
     auto_declare<double>("rotational_stiffness", 10.0);
+    // Damping ratio applied on top of the TRUE reflected mass at the current
+    // configuration (see computeCartesianDamping) -- 1.0 = critically damped.
+    // Unlike the old fixed 2*sqrt(K) law, this is meaningful independently of
+    // K: it is not a stand-in for "how stiff", it is "how oscillatory".
+    auto_declare<double>("damping_ratio", 1.0);
   } catch (const std::exception& e) {
     fprintf(stderr, "Exception thrown during init stage with message: %s \n", e.what());
     return CallbackReturn::ERROR;
@@ -97,12 +127,17 @@ CartesianImpedanceExampleController::on_configure(
   const double r_k = get_node()->get_parameter("rotational_stiffness").as_double();
   const double n_k = get_node()->get_parameter("nullspace_stiffness").as_double();
 
+  const double damping_ratio = get_node()->get_parameter("damping_ratio").as_double();
+
   CartesianGains gains = buildGains({t_k, t_k, t_k, r_k, r_k, r_k});
   cartesian_stiffness_ = gains.stiffness;
-  cartesian_damping_ = gains.damping;
+  // Recomputed every update() cycle from the live reflected mass; zeroed here
+  // only so the member is never read uninitialized before the first cycle.
+  cartesian_damping_.setZero();
   nullspace_stiffness_ = n_k;
   cartesian_gains_buffer_.initRT(gains);
   nullspace_stiffness_buffer_.initRT(n_k);
+  damping_ratio_buffer_.initRT(damping_ratio);
 
   target_pose_buffer_.initRT(TargetPose{});
 
@@ -182,9 +217,11 @@ controller_interface::return_type CartesianImpedanceExampleController::update(
   std::array<double, num_joints> coriolis_array = franka_robot_model_->getCoriolisForceVector();
   std::array<double, num_cartesian_dof * num_joints> jacobian_array =
       franka_robot_model_->getZeroJacobian(franka::Frame::kEndEffector);
+  std::array<double, num_joints * num_joints> mass_array = franka_robot_model_->getMassMatrix();
 
   Eigen::Map<Eigen::Matrix<double, num_joints, 1>> coriolis(coriolis_array.data());
   Eigen::Map<Eigen::Matrix<double, num_cartesian_dof, num_joints>> jacobian(jacobian_array.data());
+  Eigen::Map<Eigen::Matrix<double, num_joints, num_joints>> mass_matrix(mass_array.data());
 
   Eigen::Affine3d transform = Eigen::Affine3d::Identity();
   transform.translation() = position;
@@ -195,8 +232,17 @@ controller_interface::return_type CartesianImpedanceExampleController::update(
 
   const CartesianGains target_gains = *cartesian_gains_buffer_.readFromRT();
   const double target_nullspace_stiffness = *nullspace_stiffness_buffer_.readFromRT();
+  const double damping_ratio = *damping_ratio_buffer_.readFromRT();
 
   const auto error = computeError(position, orientation, transform);
+
+  // Damping against the stiffness already in effect (cartesian_stiffness_,
+  // not target_gains.stiffness) and the reflected mass AT THIS CONFIGURATION
+  // -- not the fixed 1 kg the naive 2*sqrt(K) law assumes. See
+  // computeCartesianDamping's doc comment for why K alone cannot fix an
+  // under/overdamped axis under that law.
+  cartesian_damping_ =
+      computeCartesianDamping(jacobian, mass_matrix, cartesian_stiffness_, damping_ratio);
 
   Eigen::Matrix<double, num_joints, 1> tau_task, tau_nullspace, tau_d;
 
@@ -231,8 +277,10 @@ controller_interface::return_type CartesianImpedanceExampleController::update(
 
   cartesian_stiffness_ =
       filter_params_ * target_gains.stiffness + (1.0 - filter_params_) * cartesian_stiffness_;
-  cartesian_damping_ =
-      filter_params_ * target_gains.damping + (1.0 - filter_params_) * cartesian_damping_;
+  // cartesian_damping_ is NOT filtered here: it was just fully recomputed
+  // above from cartesian_stiffness_ (already smoothly-filtered) and the
+  // current reflected mass, so filtering it too would double-smooth it
+  // against a stiffness value that has already moved on.
   nullspace_stiffness_ =
       filter_params_ * target_nullspace_stiffness + (1.0 - filter_params_) * nullspace_stiffness_;
 
@@ -331,6 +379,14 @@ rcl_interfaces::msg::SetParametersResult CartesianImpedanceExampleController::on
         return result;
       }
       nullspace_stiffness_buffer_.writeFromNonRT(v);
+    } else if (p.get_name() == "damping_ratio") {
+      const double v = p.as_double();
+      if (!std::isfinite(v) || v <= 0.0) {
+        result.successful = false;
+        result.reason = "damping_ratio must be finite and positive";
+        return result;
+      }
+      damping_ratio_buffer_.writeFromNonRT(v);
     }
   }
   return result;

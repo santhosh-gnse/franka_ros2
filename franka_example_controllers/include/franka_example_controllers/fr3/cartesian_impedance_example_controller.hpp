@@ -61,12 +61,20 @@ class CartesianImpedanceExampleController : public controller_interface::Control
   static constexpr int num_joints{7};
   static constexpr int num_cartesian_dof{6};
 
+  // Damping is no longer part of this: it depends on the current reflected
+  // mass (see computeCartesianDamping), which changes with joint
+  // configuration and so must be recomputed every update() cycle rather than
+  // baked in once here.
   struct CartesianGains {
     Eigen::Matrix<double, num_cartesian_dof, num_cartesian_dof> stiffness{
         Eigen::Matrix<double, num_cartesian_dof, num_cartesian_dof>::Zero()};
-    Eigen::Matrix<double, num_cartesian_dof, num_cartesian_dof> damping{
-        Eigen::Matrix<double, num_cartesian_dof, num_cartesian_dof>::Zero()};
   };
+
+  // Clamp on the per-axis reflected mass used for damping, so a
+  // near-singular configuration (Lambda blowing up) cannot produce
+  // infinite/NaN damping instead of just a very stiff-feeling axis.
+  static constexpr double kMinReflectedMass{0.05};
+  static constexpr double kMaxReflectedMass{50.0};
 
   std::unique_ptr<franka_semantic_components::FrankaRobotModel> franka_robot_model_;
   std::unique_ptr<franka_semantic_components::FrankaCartesianPoseInterface> franka_cartesian_pose_;
@@ -98,6 +106,7 @@ class CartesianImpedanceExampleController : public controller_interface::Control
   realtime_tools::RealtimeBuffer<TargetPose> target_pose_buffer_;
   realtime_tools::RealtimeBuffer<CartesianGains> cartesian_gains_buffer_;
   realtime_tools::RealtimeBuffer<double> nullspace_stiffness_buffer_;
+  realtime_tools::RealtimeBuffer<double> damping_ratio_buffer_;
 
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr sub_equilibrium_pose_;
   rclcpp::Service<franka_msgs::srv::SetCartesianStiffness>::SharedPtr srv_set_cartesian_stiffness_;
@@ -136,9 +145,31 @@ class CartesianImpedanceExampleController : public controller_interface::Control
                                                            const Eigen::Quaterniond& orientation,
                                                            const Eigen::Affine3d& transform) const;
 
-  /// @brief Builds stiffness and damping matrices from a 6-vector of stiffness values.
+  /// @brief Builds a stiffness matrix from a 6-vector of stiffness values.
   /// @param k Stiffness values for each Cartesian DOF.
   static CartesianGains buildGains(const std::array<double, num_cartesian_dof>& k);
+
+  /// @brief Computes per-axis Cartesian damping from the TRUE reflected mass
+  /// at the current configuration, instead of assuming it is 1 kg.
+  ///
+  /// The naive law damping = 2*sqrt(K) is only critically damped when the
+  /// reflected mass in that axis is exactly 1 kg; its damping ratio
+  /// zeta = 1/sqrt(m) is otherwise fixed and INDEPENDENT of K, so no choice
+  /// of stiffness can fix an under/overdamped axis under that law. This
+  /// computes the real operational-space mass Lambda = (J*M(q)^-1*J^T)^-1
+  /// (M from FrankaRobotModel::getMassMatrix()) and uses its diagonal as the
+  /// per-axis reflected mass, consistent with the existing diagonal-only
+  /// stiffness/damping structure (off-diagonal coupling in Lambda is not
+  /// modeled, same simplification the rest of this controller already makes).
+  /// @param jacobian Current end-effector Jacobian (space frame).
+  /// @param mass_matrix Current joint-space mass matrix M(q).
+  /// @param stiffness Diagonal Cartesian stiffness matrix to damp against.
+  /// @param damping_ratio Desired damping ratio (1.0 = critically damped).
+  [[nodiscard]] Eigen::Matrix<double, num_cartesian_dof, num_cartesian_dof> computeCartesianDamping(
+      const Eigen::Matrix<double, num_cartesian_dof, num_joints>& jacobian,
+      const Eigen::Matrix<double, num_joints, num_joints>& mass_matrix,
+      const Eigen::Matrix<double, num_cartesian_dof, num_cartesian_dof>& stiffness,
+      double damping_ratio) const;
 };
 
 }  // namespace franka_example_controllers

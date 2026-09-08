@@ -27,6 +27,25 @@
       gravity_compensation_example_controller:
         type: franka_example_controllers/GravityCompensationExampleController
 
+      # General-purpose anisotropic Cartesian stiffness/damping holding (per-axis
+      # via ~set_cartesian_stiffness, equilibrium via ~equilibrium_pose).
+      # Registered here as available infrastructure, not currently driven by
+      # any package's guiding workflow: franka_pizza tried using it to lock
+      # height/orientation during kinesthetic teaching and hit sustained
+      # oscillation the moment the tool touched a rigid surface -- a
+      # rigid-on-rigid contact instability, not a tuning bug -- and reverted to
+      # plain gravity compensation for teaching instead (see franka_pizza's
+      # kinesthetic_recorder_node.py docstring for the full account). The
+      # controller's own damping law was still genuinely wrong at the time
+      # (2*sqrt(K) assumes a 1 kg reflected mass regardless of true
+      # configuration) and has since been fixed to use the real
+      # operational-space mass; that fix is unrelated to the contact-instability
+      # finding above and remains real, verified infrastructure for whenever a
+      # proper contact-aware controller is needed. Same effort-interface
+      # conflict as the other controllers here: exactly one may be active.
+      cartesian_impedance_example_controller:
+        type: franka_example_controllers/CartesianImpedanceExampleController
+
 /**: 
   fr3_arm_controller:
     ros__parameters:
